@@ -735,13 +735,18 @@ class SileroTtsService : TextToSpeechService() {
                 return true
             }
             val canPrefetch = !screenReader && !noDict && !auditNames && rules.on("prefetch")
+            // Сразу как поставлен последний свой сегмент: пул однопоточный, заготовка считается следом за ним,
+            // пока звучат наши. Позже (на последнем сегменте) — уже после emit предпоследнего, то есть почти в конце
+            // звука, и длинный первый сегмент следующего куска не успевал (A32, zhora: пауза 3,4 с, 10.10.2026).
+            val startPrefetch = { if (canPrefetch) { prefetcher = request.callerUid to prefetchNext; prefetchNext() } }
             var next: Future<SegOut?>? = null
             // выход посреди запроса (чтец перебил) — заранее поставленный сегмент не нужен
             try { for ((si, seg) in segments.withIndex()) {
                 if (stopped) { next?.cancel(false); break }
-                val res = (next ?: ready(si) ?: synthPool.submit(Callable { unit(seg) })).get()
-                next = if (si + 1 < segments.size) ready(si + 1) ?: synthPool.submit(Callable { unit(segments[si + 1]) })
-                    else { if (canPrefetch) { prefetcher = request.callerUid to prefetchNext; prefetchNext() }; null }
+                val res = (next ?: ready(si) ?: synthPool.submit(Callable { unit(seg) }))
+                    .also { if (segments.size == 1) startPrefetch() }.get()
+                next = if (si + 1 < segments.size) (ready(si + 1) ?: synthPool.submit(Callable { unit(segments[si + 1]) }))
+                    .also { if (si + 1 == segments.lastIndex) startPrefetch() } else null
                 if (res is SegOut.Proxied) {
                     val words = res.words.mapNotNull { (key, at) ->
                         matcher.next(key).takeIf { it >= 0 }?.let { j -> Triple(Math.round(at * res.pcm.size).toInt(), srcWords[j].second, srcWords[j].third) }
