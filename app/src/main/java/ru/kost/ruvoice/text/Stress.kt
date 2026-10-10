@@ -481,6 +481,11 @@ class Stress(private val d: SileroData, private val models: StressModels, privat
     private val smiEndRe = Regex("(?<![\\p{L}+])(см\\+)(и)(?=[.!?…][^\\p{L}]*$)", RegexOption.IGNORE_CASE)
     fun stretchShort(accented: String) =
         if (rules.on("short_word")) smiEndRe.replace(shortWordRe.replace(accented, "$1$2$2"), "$1$2$2") else accented
+    /** Голос aidar, кусок начинается со слова «я» («+Я пошёл домой.»): модель тянет «+» до 14 кадров, в них тихое «я»
+     * с провалом громкости — слышно «я-я». С тире перед куском «+» 4–5 кадров, начало мягкое, остальное ±1–4 кадра
+     * (10.10.2026; symb_durs тут не годится — делает из кадров тишину, «я» начинается с обрыва). */
+    fun yaOnset(spoken: String) = if (yaStartRe.containsMatchIn(spoken)) "– $spoken" else spoken
+    private val yaStartRe = Regex("^\\+я(?!\\p{L})", RegexOption.IGNORE_CASE)
 
     private fun tokenize(sentence: String): Triple<List<String>, List<String>, List<Boolean>> {
         val tokens = ArrayList<String>(); val inputs = ArrayList<String>(); val mask = ArrayList<Boolean>()

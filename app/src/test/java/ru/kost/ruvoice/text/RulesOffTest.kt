@@ -183,6 +183,15 @@ class RulesOffTest {
         assertEquals("востр+о..." to false, oxy.modelEnd("востр+о..."))
     }
 
+    /** aidar: перед ударной «я» в начале куска — тире, больше нигде. */
+    @Test fun yaOnsetDash() {
+        val stress = Stress(d, firstVowel, rules = off("homo", "gram"))
+        assertEquals("– +я пошёл дом+ой.", stress.yaOnset("+я пошёл дом+ой."))
+        assertEquals("– +Я.", stress.yaOnset("+Я."))
+        for (s in listOf("пот+ом +я пошёл.", "– +я пошёл.", "+ясно.", "яз+ык.", "+юля пришл+а."))
+            assertEquals(s, stress.yaOnset(s))
+    }
+
     /** Реплика из одного короткого слова на гласную: гласная сдвоена, всё остальное как есть. */
     @Test fun shortWordStretched() {
         val stress = Stress(d, firstVowel, rules = off("homo", "gram"))

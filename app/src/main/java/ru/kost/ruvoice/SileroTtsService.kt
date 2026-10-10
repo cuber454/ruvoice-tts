@@ -574,7 +574,8 @@ class SileroTtsService : TextToSpeechService() {
             val audit = prefs.audit; val known = Audit.known(d, if (noDict) emptyMap() else prefs.userDict())
             val replacements = prefs.replacements()
             // Голос/темп/питч прямой речи — читаем один раз на запрос, как replacements.
-            val quoteSpeakerId = Speaker.resolve(prefs.quoteVoice, d, packs())?.takeIf { it.pack?.id == voice.pack?.id }?.id
+            val quoteVoice = Speaker.resolve(prefs.quoteVoice, d, packs())?.takeIf { it.pack?.id == voice.pack?.id }
+            val quoteSpeakerId = quoteVoice?.id
             val quoteRate = prefs.quoteRate
             val quotePitch = prefs.quotePitch
             // Английские куски — другому движку, отдельно для экранного чтеца и для книг (en_proxy_sr / en_proxy_books),
@@ -653,7 +654,8 @@ class SileroTtsService : TextToSpeechService() {
                         models.ensureLoaded(voice.pack)
                         val (accented, endDot) = stress.modelEnd(stress.apply(prepared, marks.text))
                         if (auditNames) audit.names(seg.text, accented, known)
-                        val spoken = stress.stretchShort(accented)
+                        val segVoice = if (seg.speech) quoteVoice ?: voice else voice
+                        val spoken = stress.stretchShort(accented).let { if (segVoice.name.substringAfter('/') == "aidar") stress.yaOnset(it) else it }
                         val forModel = stress.forModel(spoken)
                         if (!screenReader && rules.on("verbose_log")) note("в модель: «${visible(forModel)}»")
                         val seq = sym.sequence(forModel)
