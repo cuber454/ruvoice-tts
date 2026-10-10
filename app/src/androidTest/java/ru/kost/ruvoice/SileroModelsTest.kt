@@ -86,4 +86,23 @@ class SileroModelsTest {
         m.release()
         Packs.delete(ctx.filesDir, "cis_ru")
     }
+
+    /** Пак ru_voices (общий вокодер, голоса с bases): zip заранее `adb push dist/ruvoice-pack-ru_voices.zip /data/local/tmp/`.
+     * Ставит пак (если его не было — потом удаляет), проверяет основы и синтезирует «я»-фразу голосом kazbek на aidar. */
+    @Test fun voicesPackBasesAndSynth() {
+        val zip = java.io.File("/data/local/tmp/ruvoice-pack-ru_voices.zip")
+        org.junit.Assume.assumeTrue("нет $zip", zip.isFile)
+        val had = Packs.installed(ctx.filesDir).any { it.id == "ru_voices" }
+        val pack = zip.inputStream().use { Packs.install(it, ctx.filesDir) }
+        assertEquals("aidar", pack.bases["kazbek"]); assertEquals("eugene", pack.bases["boris"]); assertNull(pack.bases["aidar"])
+        val kazbek = Speaker.resolve("ru_voices/kazbek", SileroModels(ctx).data, listOf(pack))!!
+        assertEquals("aidar", kazbek.base)
+        val m = SileroModels(ctx); m.ensureLoaded(pack)
+        val seq = pack.sym.sequence("– +я пош+ёл дом+ой.")
+        val n = seq.size
+        val out = m.synthesize(seq, kazbek.id, 48000, FloatArray(n) { 1f }, FloatArray(n) { 1f }, LongArray(n), LongArray(n), emptyMap(), types = true)
+        assertTrue(out.audio.size > 48000 / 2); assertEquals(n, out.durs.size); assertTrue(out.audio.any { Math.abs(it) > 0.05f })
+        m.release()
+        if (!had) Packs.delete(ctx.filesDir, "ru_voices")
+    }
 }

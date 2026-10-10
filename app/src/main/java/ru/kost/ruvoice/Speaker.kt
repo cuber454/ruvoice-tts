@@ -3,6 +3,8 @@ package ru.kost.ruvoice
 /** Голос по имени из Prefs или от читалки: штатный («xenia») или из пака («cis_ru/ru_alexandr»).
  * В сервисе класс android.speech.tts.Voice, поэтому не Voice. */
 class Speaker(val name: String, val pack: Pack?, val id: Int, val sym: Symbols, val types: Boolean) {
+    /** Штатный голос, от которого темп и интонация: у голосов из открытых записей — из bases пака, иначе сам голос. */
+    val base: String get() = name.substringAfter('/').let { pack?.bases?.get(it) ?: it }
     companion object {
         const val DEFAULT = "xenia"
         /** Пак штатной модели для сборки lite: голые имена («xenia» из старых prefs) ищем в нём. */

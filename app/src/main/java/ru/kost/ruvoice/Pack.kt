@@ -19,6 +19,8 @@ class Pack(json: String, val dir: File) {
     val sym: Symbols
     /** Имя голоса в модели (ru_alexandr) → speaker id. */
     val speakers: Map<String, Int>
+    /** Новый голос → штатный, от которого у него темп и интонация (pack.py voicekit); у штатных записи нет. */
+    val bases: Map<String, String>
     /** forward с type_ids и focus_mask (13 аргументов, v5_5_ru); false — 11, как у v5_ru и cis. */
     val types: Boolean
     val size: Long get() = Packs.MODEL_FILES.sumOf { File(dir, it).length() }
@@ -33,6 +35,7 @@ class Pack(json: String, val dir: File) {
         speakers = o.getJSONObject("speakers").let { j -> j.keys().asSequence().associateWith { j.getInt(it) } }
         if (speakers.isEmpty()) throw UserError("В паке нет голосов", R.string.err_pack_no_voices)
         types = o.optBoolean("types", false)
+        bases = o.optJSONObject("bases")?.let { j -> j.keys().asSequence().associateWith { j.getString(it) } } ?: emptyMap()
     }
 }
 

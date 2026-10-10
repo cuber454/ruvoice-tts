@@ -10,11 +10,12 @@ class SpeakerTest {
     private val d = TestData.data()
     private val pack = Pack(JSONObject(File(TestData.root(), "app/src/test/resources/golden_pack.json").readText()).getJSONObject("pack").toString(), File("."))
     // пак ru = штатная модель паком: та же таблица символов и голоса, что в silero_ru.json
-    private val ruPack = Pack(JSONObject(File(TestData.root(), "app/src/main/assets/silero/silero_ru.json").readText()).let { j ->
+    private val ruJson = JSONObject(File(TestData.root(), "app/src/main/assets/silero/silero_ru.json").readText()).let { j ->
         JSONObject().put("format", 2).put("id", "ru").put("title", "Штатные голоса").put("license", "CC BY-NC-SA 4.0").put("source", "x")
             .put("symbols", j.getString("symbols")).put("symbol_to_id", j.getJSONObject("symbol_to_id")).put("sos", j.getString("sos")).put("eos", j.getString("eos"))
-            .put("alphabet", j.getString("alphabet")).put("types", true).put("speakers", j.getJSONObject("speakers")).toString()
-    }, File("."))
+            .put("alphabet", j.getString("alphabet")).put("types", true).put("speakers", j.getJSONObject("speakers"))
+    }
+    private val ruPack = Pack(ruJson.toString(), File("."))
 
     private fun lite(block: () -> Unit) { Speaker.builtin = false; try { block() } finally { Speaker.builtin = true } }
 
@@ -23,6 +24,17 @@ class SpeakerTest {
         assertNull(x.pack); assertTrue(x.types); assertSame(d.sym, x.sym); assertEquals(d.speakers.getValue("xenia"), x.id)
         val a = Speaker.resolve("cis_ru/ru_alexandr", d, listOf(pack))!!
         assertSame(pack, a.pack); assertFalse(a.types); assertSame(pack.sym, a.sym); assertEquals(pack.speakers.getValue("ru_alexandr"), a.id)
+    }
+
+    @Test fun baseFromPackBases() {
+        val j = JSONObject(ruJson.toString()).put("id", "ru_voices")
+        j.getJSONObject("speakers").put("kazbek", 5).put("boris", 6)
+        val v = Pack(j.put("bases", JSONObject().put("kazbek", "aidar").put("boris", "eugene")).toString(), File("."))
+        assertEquals("aidar", Speaker.resolve("ru_voices/kazbek", d, listOf(v))!!.base)
+        assertEquals("eugene", Speaker.resolve("ru_voices/boris", d, listOf(v))!!.base)
+        assertEquals("aidar", Speaker.resolve("ru_voices/aidar", d, listOf(v))!!.base)   // штатный в паке — сам себе основа
+        assertEquals("aidar", Speaker.resolve("aidar", d, listOf(v))!!.base)
+        assertEquals("ru_alexandr", Speaker.resolve("cis_ru/ru_alexandr", d, listOf(pack))!!.base)   // пак без bases
     }
 
     @Test fun unknownIsNullAndDefaultIsXenia() {
