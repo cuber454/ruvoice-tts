@@ -1512,7 +1512,19 @@ object Normalizer {
         """(?<![\p{L}])(глав(?:а|ы|е|у|ой|ах|ам|ами)?|част(?:ь|и|ью|ей|ях|ям|ями)|книг(?:а|и|е|у|ой|ах|ам|ами)?|раздел(?:а|у|е|ом|ов|ах|ам|ами)?)\s+(\d{1,3})(?!\d|[.,]\d|[:/]|\s*[-–—]?\s*\d|-?(?:$ordSuffixAlt)(?![а-яё\d]))""",
         RegexOption.IGNORE_CASE
     )
-    private fun chapterOrdinals(text: String) = chapterRe.replace(chapterRangeRe.replace(text) { m ->
+    // Номер перед существительным: «22 глава» → «22-я глава» (жалоба 10.10.2026). Только им. ед.: счёт был бы «22 главы»,
+    // «5 глав», «22 тома». Число на 1 («21 глава») совпадает со счётом, его — только в начале строки, как заголовок.
+    private val chapterBeforeRe = Regex(
+        """(?<![\p{L}\d.,:/–—-])(\d{1,3})\s+(глава|часть|книга|том|раздел)(?![\p{L}\d-])""", RegexOption.IGNORE_CASE)
+    private fun chapterBefore(text: String) = chapterBeforeRe.replace(text) { m ->
+        val (num, noun) = m.destructured
+        val n = num.toInt()
+        val before = text.substring(0, m.range.first).trimEnd(' ', '\t')
+        if (n % 10 == 1 && n % 100 != 11 && before.isNotEmpty() && !before.endsWith('\n')) return@replace m.value
+        val stem = romanNounGender.keys.first { noun.lowercase().startsWith(it) }
+        "$num-${ordSuffixByCase.getValue(romanNounGender.getValue(stem))[Case.NOM.ordinal]} $noun"
+    }
+    private fun chapterOrdinals(text: String) = chapterRe.replace(chapterRangeRe.replace(chapterBefore(text)) { m ->
         val (noun, a, b) = m.destructured
         val stem = romanNounGender.keys.firstOrNull { noun.lowercase().startsWith(it) } ?: return@replace m.value
         val suf = ordSuffixByCase.getValue(romanNounGender.getValue(stem))

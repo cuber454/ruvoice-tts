@@ -56,6 +56,12 @@ class NumbersTest {
     @Test fun textAroundIsKept() {
         assertEquals("глава двенадцатая, страница три", n("глава 12, страница 3"))
         assertEquals("без чисел", n("без чисел"))
+        // номер перед словом (10.10.2026); число на 1 в середине фразы — счёт
+        assertEquals("двадцать вторая глава", n("22 глава"))
+        assertEquals("первая глава", n("1 глава"))
+        assertEquals("читаю пятый том", n("читаю 5 том"))
+        assertEquals("здесь двадцать одна глава", n("здесь 21 глава"))
+        assertEquals("двадцать две главы", n("22 главы"))
     }
 
     @Test fun longNumberDigitByDigit() {
