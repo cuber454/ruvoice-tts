@@ -12,10 +12,11 @@ import java.io.File
  * вариант вместо их «out» (см. note в json). Тест — трещотка: число совпадений
  * не должно падать ниже MIN_MATCHED; полный список расхождений пишется в build/ru_normalizr_diff.txt.
  * Прогон дважды: без таблицы морфологии (как в тестах без ассета) и с ней (как в приложении);
- * трещотка — по второму, без таблицы — не ниже MIN_MATCHED_NO_MORPH.
+ * трещотка — по второму, без таблицы — не ниже MIN_MATCHED_NO_MORPH; оба режима корпуса, safe и tts.
  */
 class RuNormalizrCorpusTest {
-    private fun canon(s: String) = s.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
+    // «+» — ударение внутри слова («б+э»), не граница слов
+    private fun canon(s: String) = s.lowercase().replace("+", "").replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
 
     // эталон читает ссылки по частям — без книжного link_domain
     private fun ours(text: String) = Abbrev.apply(Normalizer.numbers(Normalizer.punctuation(text), Rules(setOf("link_domain"))))
@@ -52,8 +53,13 @@ class RuNormalizrCorpusTest {
         println("ru-normalizr: $s")
         assertTrue(s, (with.first["safe"] ?: 0) >= MIN_MATCHED)
         assertTrue(s, (without.first["safe"] ?: 0) >= MIN_MATCHED_NO_MORPH)
+        assertTrue(s, (with.first["tts"] ?: 0) >= MIN_MATCHED_TTS)
+        assertTrue(s, (without.first["tts"] ?: 0) >= MIN_MATCHED_TTS_NO_MORPH)
     }
 
-    // −5 с 25.09.2026: «эмм», «энн», «ээр» в аббревиатурах (ГЛМ, GLM, НДС, РФ), корпус ждёт «эм», «эн», «эр»
-    companion object { const val MIN_MATCHED = 487; const val MIN_MATCHED_NO_MORPH = 480 }
+    // 13.10.2026 корпус ru-normalizr 1.3.0: safe 715 кейсов, tts 2103; было 595/586 и 1483/1477 до разбора расхождений
+    companion object {
+        const val MIN_MATCHED = 652; const val MIN_MATCHED_NO_MORPH = 637
+        const val MIN_MATCHED_TTS = 1834; const val MIN_MATCHED_TTS_NO_MORPH = 1807
+    }
 }

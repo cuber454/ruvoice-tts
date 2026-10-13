@@ -47,7 +47,7 @@ class MorphRulesTest {
         assertEquals("двадцатью одним столом", n("21 столом"))
         assertEquals("пятью путями", n("5 путями"))
         assertEquals("семи гномам", n("7 гномам"))
-        assertEquals("три друзей", n("3 друзей"))
+        assertEquals("трёх друзей", n("3 друзей"))
         assertEquals("два–три рабочих дня", n("2–3 рабочих дня"))
         assertEquals("пять друзей", n("5 друзей"))
         assertEquals("пять минут", n("5 минут"))
