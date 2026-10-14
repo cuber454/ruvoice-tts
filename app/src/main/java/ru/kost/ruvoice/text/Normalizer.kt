@@ -2683,7 +2683,8 @@ object Normalizer {
     // «от -5 до 3» — минус перед числом после триггера: «от минус пяти».
     private fun applyCase(text: String, re: Regex, case: Case) = re.replace(text) { m ->
         // род — по существительному следом (прилагательное перед ним пропускаем): «о 1 заявке» — «об одной», не «одном»
-        val femNoun = nextWordsRe.find(text, m.groups[1]!!.range.last + 1)?.groupValues?.drop(1)?.filter { it.isNotEmpty() }
+        val end = m.groups[1]!!.range.last + 1
+        val femNoun = nextWordsRe.find(text.substring(end, minOf(text.length, end + 100)))?.groupValues?.drop(1)?.filter { it.isNotEmpty() }
             ?.firstNotNullOfOrNull { w -> morph?.tags(w.lowercase())?.takeIf { Morph.isNoun(it) && !Morph.isAdjective(it) } }
             ?.let { Morph.gender(it) == Gender.F } == true
         val g = m.groupValues[1]
@@ -2694,7 +2695,8 @@ object Normalizer {
         }
         m.replaceChain(1) { n -> Declension.cardinal(n, case, femNoun && (n % 10 == 1L || n % 10 == 2L) && n % 100 !in 11..12) }
     }
-    private val nextWordsRe = Regex("""\G\s+(\p{L}+)(?:\s+(\p{L}+))?""")
+    // не \G с find(text, start): на ICU \G не привязан к start
+    private val nextWordsRe = Regex("""^\s+(\p{L}+)(?:\s+(\p{L}+))?""")
 
     // «детей 6-12 лет» — возраст в родительном: «шести-двенадцати лет»
     private val ageRangeRe = Regex("""(?<=(?<![\p{L}])(?:детей|подростков|школьников|людей|граждан|пациентов|мужчин|женщин|взрослых|учеников|ребят)\s)(\d+)(\s*[-–—]\s*)(\d+)(?=\s+лет(?![\p{L}]))""", RegexOption.IGNORE_CASE)

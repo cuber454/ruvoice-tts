@@ -7,7 +7,7 @@ import org.junit.Test
  * На Android регулярки исполняет ICU: просмотр назад обязан иметь ограниченную длину, иначе Pattern
  * не компилируется и падает весь объект Normalizer. JVM такое прощает, поэтому проверяем сами: все Regex-поля
  * Normalizer (и lazy) — внутри (?<= и (?<! не должно быть *, + и {n,}, а захватывающих групп — тоже: их значение
- * изнутри просмотра назад на ICU ненадёжно.
+ * изнутри просмотра назад на ICU ненадёжно. \G тоже нельзя: ICU не привязывает его к start в find(text, start).
  */
 class IcuLookbehindTest {
     private fun patterns(): List<Pair<String, String>> = Normalizer::class.java.declaredFields.mapNotNull { f ->
@@ -74,6 +74,11 @@ class IcuLookbehindTest {
 
     @Test fun noCapturesInLookbehinds() {
         val bad = patterns().flatMap { (name, p) -> lookbehinds(p).filter(::captures).map { "$name: (?<…$it)" } }
+        assertTrue(bad.joinToString("\n"), bad.isEmpty())
+    }
+
+    @Test fun noContinuationAnchor() {
+        val bad = patterns().filter { (_, p) -> Regex("""(?<!\\)(?:\\\\)*\\G""").containsMatchIn(p) }.map { it.first }
         assertTrue(bad.joinToString("\n"), bad.isEmpty())
     }
 
