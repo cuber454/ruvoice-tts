@@ -249,7 +249,7 @@
     <string name="about_releases">The latest version is always on the releases page, app stores may lag behind.</string>
     <string name="about_releases_button">Releases on GitHub</string>
     <string name="browser_missing">No browser found</string>
-    <string name="about_body">RuVoice TTS %1$s\nSource code and new versions: https://github.com/kost-t-human/ruvoice-tts\n\nSpeech synthesis: Silero Models (github.com/snakers4/silero-models), model v5_5_ru, license CC BY-NC-SA 4.0. Non-commercial use only.\n\nStress: Silero Stress (github.com/snakers4/silero-stress), MIT license.\n\nMorphological dictionary: AOT (github.com/sokirko74/morph_dict), LGPL license.\n\nSpeed change without pitch change: Sonic, Bill Cox, Apache-2.0.</string>
+    <string name="about_body">RuVoice TTS %1$s\nSource code and new versions: https://github.com/kost-t-human/ruvoice-tts\n\nSpeech synthesis: Silero Models (github.com/snakers4/silero-models), model v5_5_ru, license CC BY-NC-SA 4.0. Non-commercial use only.\n\nThe new voices of the full build are trained on open recordings: LibriVox (public domain), Common Voice and OHF-Voice (CC0), RUSLAN corpus (ruslan-corpus.github.io, CC BY-NC-SA 4.0), Wikipedia spoken articles by GK tramrunner and TIMUR MURATOV (CC BY-SA).\n\nStress: Silero Stress (github.com/snakers4/silero-stress), MIT license.\n\nMorphological dictionary: AOT (github.com/sokirko74/morph_dict), LGPL license.\n\nSpeed change without pitch change: Sonic, Bill Cox, Apache-2.0.</string>
 
     <!-- Voice packs -->
     <string name="voice_packs">More voices…</string>

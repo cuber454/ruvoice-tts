@@ -255,7 +255,7 @@
     <string name="about_releases">Свежая версия всегда на странице релизов, в сторах бывает с задержкой.</string>
     <string name="about_releases_button">Релизы на GitHub</string>
     <string name="browser_missing">Браузер не найден</string>
-    <string name="about_body">RuVoice TTS %1$s\nИсходники и новые версии: https://github.com/kost-t-human/ruvoice-tts\n\nСинтез речи: Silero Models (github.com/snakers4/silero-models), модель v5_5_ru, лицензия CC BY-NC-SA 4.0. Только некоммерческое использование.\n\nУдарения: Silero Stress (github.com/snakers4/silero-stress), лицензия MIT.\n\nМорфологический словарь: AOT (github.com/sokirko74/morph_dict), лицензия LGPL.\n\nРастяжение темпа: Sonic, Bill Cox, Apache-2.0.</string>
+    <string name="about_body">RuVoice TTS %1$s\nИсходники и новые версии: https://github.com/kost-t-human/ruvoice-tts\n\nСинтез речи: Silero Models (github.com/snakers4/silero-models), модель v5_5_ru, лицензия CC BY-NC-SA 4.0. Только некоммерческое использование.\n\nНовые голоса полной сборки обучены на открытых записях: LibriVox (общественное достояние), Common Voice и OHF-Voice (CC0), RUSLAN corpus (ruslan-corpus.github.io, CC BY-NC-SA 4.0), аудиостатьи Википедии GK tramrunner и TIMUR MURATOV (CC BY-SA).\n\nУдарения: Silero Stress (github.com/snakers4/silero-stress), лицензия MIT.\n\nМорфологический словарь: AOT (github.com/sokirko74/morph_dict), лицензия LGPL.\n\nРастяжение темпа: Sonic, Bill Cox, Apache-2.0.</string>
 
     <!-- Паки голосов -->
     <string name="voice_packs">Дополнительные голоса…</string>

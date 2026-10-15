@@ -9,11 +9,12 @@ class SpeakerTest {
     init { Speaker.builtin = true }   // тесты считают сборку full, lite включается через lite {}; в testLite… BuildConfig даёт false
     private val d = TestData.data()
     private val pack = Pack(JSONObject(File(TestData.root(), "app/src/test/resources/golden_pack.json").readText()).getJSONObject("pack").toString(), File("."))
-    // пак ru = штатная модель паком: та же таблица символов и голоса, что в silero_ru.json
+    // пак ru = пять штатных голосов паком: та же таблица символов, что в silero_ru.json (во встроенной full ещё и новые голоса)
     private val ruJson = JSONObject(File(TestData.root(), "app/src/main/assets/silero/silero_ru.json").readText()).let { j ->
         JSONObject().put("format", 2).put("id", "ru").put("title", "Штатные голоса").put("license", "CC BY-NC-SA 4.0").put("source", "x")
             .put("symbols", j.getString("symbols")).put("symbol_to_id", j.getJSONObject("symbol_to_id")).put("sos", j.getString("sos")).put("eos", j.getString("eos"))
-            .put("alphabet", j.getString("alphabet")).put("types", true).put("speakers", j.getJSONObject("speakers"))
+            .put("alphabet", j.getString("alphabet")).put("types", true)
+            .put("speakers", JSONObject(listOf("aidar", "baya", "kseniya", "eugene", "xenia").associateWith { j.getJSONObject("speakers").getInt(it) }))
     }
     private val ruPack = Pack(ruJson.toString(), File("."))
 
@@ -34,6 +35,8 @@ class SpeakerTest {
         assertEquals("eugene", Speaker.resolve("ru_voices/boris", d, listOf(v))!!.base)
         assertEquals("aidar", Speaker.resolve("ru_voices/aidar", d, listOf(v))!!.base)   // штатный в паке — сам себе основа
         assertEquals("aidar", Speaker.resolve("aidar", d, listOf(v))!!.base)
+        assertEquals("xenia", Speaker.resolve("ilya", d, emptyList())!!.base)   // встроенная full: bases из silero_ru.json
+        assertEquals("aidar", Speaker.resolve("kazbek", d, emptyList())!!.base)
         assertEquals("ru_alexandr", Speaker.resolve("cis_ru/ru_alexandr", d, listOf(pack))!!.base)   // пак без bases
     }
 
@@ -46,10 +49,11 @@ class SpeakerTest {
 
     @Test fun namesAndSameEngine() {
         val names = Speaker.names(d, listOf(pack))
-        assertEquals(d.speakers.keys.sorted(), names.take(5))
-        assertEquals(5 + 29, names.size); assertEquals("cis_ru/ru_aigul", names[5])
+        val n = d.speakers.size
+        assertEquals(d.speakers.keys.sorted(), names.take(n))
+        assertEquals(n + 29, names.size); assertEquals("cis_ru/ru_aigul", names[n])
         assertEquals(d.speakers.keys.sorted(), Speaker.sameEngine(Speaker.default(d, listOf(pack))!!, d, listOf(pack)))
-        assertEquals(names.drop(5), Speaker.sameEngine(Speaker.resolve("cis_ru/ru_vika", d, listOf(pack))!!, d, listOf(pack)))
+        assertEquals(names.drop(n), Speaker.sameEngine(Speaker.resolve("cis_ru/ru_vika", d, listOf(pack))!!, d, listOf(pack)))
     }
 
     @Test fun labels() {
@@ -98,7 +102,7 @@ class SpeakerTest {
     @Test fun fullKeepsBuiltinEvenWithRuPack() {
         val x = Speaker.resolve("xenia", d, listOf(ruPack))!!
         assertNull(x.pack); assertEquals("xenia", x.name)
-        assertEquals(5 + 5, Speaker.names(d, listOf(ruPack)).size)
+        assertEquals(d.speakers.size + 5, Speaker.names(d, listOf(ruPack)).size)
     }
 
     @Test fun existsMatchesResolve() {

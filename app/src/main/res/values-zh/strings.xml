@@ -250,7 +250,7 @@
     <string name="about_releases">最新版本总是在发布页面上，应用商店可能会有延迟。</string>
     <string name="about_releases_button">GitHub 发布页</string>
     <string name="browser_missing">未找到浏览器</string>
-    <string name="about_body">RuVoice TTS %1$s\n源代码和新版本：https://github.com/kost-t-human/ruvoice-tts\n\n语音合成：Silero Models（github.com/snakers4/silero-models），模型 v5_5_ru，许可证 CC BY-NC-SA 4.0。仅限非商业用途。\n\n重音：Silero Stress（github.com/snakers4/silero-stress），MIT 许可证。\n\n形态学词典：AOT（github.com/sokirko74/morph_dict），LGPL 许可证。\n\n变速：Sonic，Bill Cox，Apache-2.0。</string>
+    <string name="about_body">RuVoice TTS %1$s\n源代码和新版本：https://github.com/kost-t-human/ruvoice-tts\n\n语音合成：Silero Models（github.com/snakers4/silero-models），模型 v5_5_ru，许可证 CC BY-NC-SA 4.0。仅限非商业用途。\n\n完整版的新声音基于公开录音训练：LibriVox（公有领域）、Common Voice 和 OHF-Voice（CC0）、RUSLAN corpus（ruslan-corpus.github.io，CC BY-NC-SA 4.0）、GK tramrunner 和 TIMUR MURATOV 的维基百科有声条目（CC BY-SA）。\n\n重音：Silero Stress（github.com/snakers4/silero-stress），MIT 许可证。\n\n形态学词典：AOT（github.com/sokirko74/morph_dict），LGPL 许可证。\n\n变速：Sonic，Bill Cox，Apache-2.0。</string>
 
     <!-- 语音包 -->
     <string name="voice_packs">更多语音…</string>

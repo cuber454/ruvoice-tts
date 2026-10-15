@@ -22,6 +22,8 @@ class SileroData(bin: StressBin.File) {
     val symbolToId: Map<Char, Int> get() = sym.symbolToId
     val alphabet: Set<Char> get() = sym.alphabet
     val speakers: Map<String, Int>
+    /** Основа (темп и интонация) новых голосов встроенной модели, как bases в паке. */
+    val bases: Map<String, String>
     val exceptions: Lookup<IntArray>
     val homodict: Lookup<List<String>>
     /** Фразы Silero Stress: слово → [(фраза, вариант с «+»)], порядок важен — длинные фразы раньше. */
@@ -47,6 +49,7 @@ class SileroData(bin: StressBin.File) {
         val o = JSONObject(bin.head)
         sym = Symbols.fromJson(o)
         speakers = o.getJSONObject("speakers").let { j -> j.keys().asSequence().associateWith { j.getInt(it) } }
+        bases = o.optJSONObject("bases")?.let { j -> j.keys().asSequence().associateWith { j.getString(it) } } ?: emptyMap()
         fun strs(t: StressBin.Table, p: Int, n: Int): List<String> { var q = p; return List(n) { t.str(q).also { q = it.second }.first } }
         exceptions = Lookup(bin.table("exceptions")) { t, p -> intArrayOf(t.int(p), t.int(p, 1)) }
         homodict = Lookup(bin.table("homodict")) { t, p -> strs(t, p + 1, t.u8(p)) }

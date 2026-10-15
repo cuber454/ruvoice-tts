@@ -2,9 +2,11 @@ package ru.kost.ruvoice
 
 /** Голос по имени из Prefs или от читалки: штатный («xenia») или из пака («cis_ru/ru_alexandr»).
  * В сервисе класс android.speech.tts.Voice, поэтому не Voice. */
-class Speaker(val name: String, val pack: Pack?, val id: Int, val sym: Symbols, val types: Boolean) {
-    /** Штатный голос, от которого темп и интонация: у голосов из открытых записей — из bases пака, иначе сам голос. */
-    val base: String get() = name.substringAfter('/').let { pack?.bases?.get(it) ?: it }
+class Speaker(val name: String, val pack: Pack?, val id: Int, val sym: Symbols, val types: Boolean,
+              private val builtinBases: Map<String, String> = emptyMap()) {
+    /** Штатный голос, от которого темп и интонация: у новых голосов — из bases пака (у встроенной модели — из
+     * silero_ru.json), иначе сам голос. */
+    val base: String get() = name.substringAfter('/').let { (pack?.bases ?: builtinBases)[it] ?: it }
     companion object {
         const val DEFAULT = "xenia"
         /** Пак штатной модели для сборки lite: голые имена («xenia» из старых prefs) ищем в нём. */
@@ -18,7 +20,7 @@ class Speaker(val name: String, val pack: Pack?, val id: Int, val sym: Symbols, 
             if (name == null) return null
             val i = name.indexOf('/')
             if (i < 0) {
-                if (builtin) return d.speakers[name]?.let { Speaker(name, null, it, d.sym, true) }
+                if (builtin) return d.speakers[name]?.let { Speaker(name, null, it, d.sym, true, d.bases) }
                 return packs.firstOrNull { it.id == RU_PACK }?.let { of(it, name) }
             }
             val pack = packs.firstOrNull { it.id == name.substring(0, i) } ?: return null
