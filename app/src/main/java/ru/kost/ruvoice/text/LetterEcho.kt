@@ -68,17 +68,17 @@ object LetterEcho {
         val subjects = toks.filter { it !is Tok.Word }
         val words = toks.filterIsInstance<Tok.Word>()
         if (subjects.isEmpty() || words.none { norm(it.text) in ACTION }) return null
+        val case = words.map { it.text }.filter { norm(it) in CASE }.distinct().joinToString(" ").ifEmpty { null }
+        val first = toks.indexOf(subjects[0])
+        fun joined(ws: List<Tok>) = ws.filterIsInstance<Tok.Word>().map { it.text }.filter { norm(it) !in CASE }.joinToString(" ").ifEmpty { null }
+        val tail = listOfNotNull(case, joined(toks.subList(first + 1, toks.size)))
         val name = when {
             subjects.all { it is Tok.Letter && it.c.equals((subjects[0] as Tok.Letter).c, ignoreCase = true) } ->
                 // имя как у голой буквы («в+э.», «— +ы» — иначе «вы», «пы»); точку перед следующей частью заменяет запятая
-                Abbrev.loneLetterName((subjects[0] as Tok.Letter).c)
+                Abbrev.loneLetterName((subjects[0] as Tok.Letter).c, end = tail.isEmpty())
             subjects.size == 1 && subjects[0] is Tok.Symbol -> (subjects[0] as Tok.Symbol).c.let { PUNCT_NAMES[it] ?: SymbolNames.of(it) }
             else -> null
         } ?: return null
-        val first = toks.indexOf(subjects[0])
-        fun joined(ws: List<Tok>) = ws.filterIsInstance<Tok.Word>().map { it.text }.filter { norm(it) !in CASE }.joinToString(" ").ifEmpty { null }
-        val case = words.map { it.text }.filter { norm(it) in CASE }.distinct().joinToString(" ").ifEmpty { null }
-        val tail = listOfNotNull(case, joined(toks.subList(first + 1, toks.size)))
         return listOfNotNull(joined(toks.subList(0, first)), if (tail.isEmpty()) name else name.trimEnd('.'), *tail.toTypedArray())
             .joinToString(", ")
     }

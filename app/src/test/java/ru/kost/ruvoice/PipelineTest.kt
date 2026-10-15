@@ -147,15 +147,15 @@ class PipelineTest {
     // TalkBack при посимвольной навигации/эхе ввода шлёт запрос из одной буквы — читаем её по имени.
     @Test fun loneLetterRequestIsSpelled() {
         fun first(t: String, rules: Rules = Rules()) = Pipeline.plan(t, d, 0, 0, rules = rules).single().text
-        assertEquals("б+э", first("б"))
-        assertEquals("б+э", first(" Б. "))
+        assertEquals("б+ээ.", first("б"))   // в конце фразы зажим хвоста: гласную удваиваем
+        assertEquals("б+ээ.", first(" Б. "))
         assertEquals("прописная буква в+э", first("прописная буква В."))
         assertEquals("м+ягкий знак", first("ь"))
-        assertEquals("б+и", first("b"))
-        assertEquals("у+ай", first("Y"))
+        assertEquals("б+ии.", first("b"))
+        assertEquals("у+ай.", first("Y"))
         assertEquals("з+эдд, заглавная", first("Заглавная Z"))
         assertEquals("в+э.", first("в"))
-        assertEquals("ч+э", first("Ч"))
+        assertEquals("ч+ээ.", first("Ч"))
         assertEquals("ч+э, заглавная", first("Ч Заглавная"))
         assertEquals("— +ы", first("Ы"))
         assertEquals("прописная буква +ы", first("прописная буква Ы."))   // со словами вокруг — обычное имя
@@ -164,13 +164,13 @@ class PipelineTest {
         assertEquals("п+э, заглавная", first("Заглавная П"))   // имя буквы вперёд
         assertEquals("+ы, заглавная буква", first("заглавная буква Ы"))
         assertEquals("в заглавной роли", first("в заглавной роли"))
-        assertEquals("+ээр", first("р"))   // «+эр» модель читает «р»
+        assertEquals("+ээр.", first("р"))   // «+эр» модель читает «р»
         assertEquals("прописная буква +энн", first("прописная буква Н."))
-        assertEquals("+эмм", first("м"))
-        assertEquals("+эмм", first("m"))    // латинские M и N — как русские М и Н
-        assertEquals("+энн", first("N"))
-        assertEquals("у+ай", first("y"))    // /waɪ/: ударение на «ай», не «У́-ай»
-        assertEquals("з+эдд", first("Z"))    // «з+ед» модель читает «зет»
+        assertEquals("+эмм.", first("м"))
+        assertEquals("+эмм.", first("m"))    // латинские M и N — как русские М и Н
+        assertEquals("+энн.", first("N"))
+        assertEquals("у+ай.", first("y"))    // /waɪ/: ударение на «ай», не «У́-ай»
+        assertEquals("з+эдд.", first("Z"))    // «з+ед» модель читает «зет»
         assertEquals("удаление, у+ай, заглавная", Pipeline.plan("Удаление заглавная Y", d, 0, 0, rules = Rules().screenReader()).single().text)
         // внутри текста «в» — предлог, не трогаем
         assertEquals("в 1917 году.", first("в 1917 году."))
@@ -258,17 +258,17 @@ class PipelineTest {
         fun first(t: String) = Pipeline.plan(t, d, 0, 0, rules = Rules().screenReader()).single().text
         assertEquals("удаление, +ээр, заглавная", first("Удаление заглавная Р"))
         assertEquals("удаление, +ээр, заглавная", first("Удаление Р заглавная"))
-        assertEquals("удаление, +ээр", first("Удаление р"))
+        assertEquals("удаление, +ээр.", first("Удаление р"))
         assertEquals("+ээр, удалено", first("р удалено"))                         // Jieshuo msg_deleted
         assertEquals("+ээр, заглавная буква, удалено", first("Р Заглавная буква Р удалено"))  // upper_case_format
         assertEquals("удаление, в+э.", first("Удаление в"))                       // буква, не предлог: других слов нет
         assertEquals("удаление, в+э, заглавная", first("Удаление заглавная В"))
         assertEquals("удаление, — +ы", first("Удаление ы"))
-        assertEquals("удаление, ч+э", first("Удаление ч"))
+        assertEquals("удаление, ч+ээ.", first("Удаление ч"))
         assertEquals("удаление, +ар, заглавная", first("Удаление заглавная R"))
         // шаблоны TalkBack
         assertEquals("текст, +ээр, прописная буква, удален", first("Текст прописная буква Р. удален."))
-        assertEquals("вставлен текст, +ээр", first("Вставлен текст \"р\""))
+        assertEquals("вставлен текст, +ээр.", first("Вставлен текст \"р\""))
         assertEquals("+ээр, буква, удалена", first("Буква \"р\" удалена."))
         // удалённый знак — по имени
         assertEquals("удаление, запятая", first("Удаление ,"))
@@ -299,7 +299,7 @@ class PipelineTest {
     @Test fun latinLetterEchoStaysRussianNamed() {
         // набор по буквам: одиночная латинская буква и эхо с ней — имя буквы русским голосом, не другому движку
         val sr = Rules().screenReader()
-        assertEquals(listOf("+ар" to false), Pipeline.plan("r", d, 0, 0, rules = sr, englishWords = 1).map { it.text to it.en })
+        assertEquals(listOf("+ар." to false), Pipeline.plan("r", d, 0, 0, rules = sr, englishWords = 1).map { it.text to it.en })
         assertEquals(listOf("удаление, +ар, заглавная" to false), Pipeline.plan("Удаление заглавная R", d, 0, 0, rules = sr, englishWords = 1).map { it.text to it.en })
     }
 
