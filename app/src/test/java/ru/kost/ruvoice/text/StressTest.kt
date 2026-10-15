@@ -315,4 +315,17 @@ class StressTest {
         // исключение модели «истекший» = [3, 3] (ударение и «ё»); «ист+екший» из замены оставляет «е»
         assertEquals("ист+ёкший +и ист+екший", Stress(d, yo).apply("истекший и ист+екший"))
     }
+
+    @Test fun surnameByCapitalInSource() {
+        val s = Stress(d, firstVowel)
+        fun full(src: String) = s.apply(Normalizer.prepare(src, d.allowed), src)
+        assertTrue(full("Пришёл Иван Волков.").contains("в+олков"))
+        assertTrue(full("Это был Рогов, не Жуков.").let { "р+огов" in it && "ж+уков" in it })
+        // строчная и начало предложения — род. мн. из exceptions
+        assertTrue(full("Стая волков.").contains("волк+ов"))
+        assertTrue(full("Волков не было.").contains("волк+ов"))
+        assertTrue(full("— Волков не было.").contains("волк+ов"))
+        // вхождения по порядку: строчное и заглавное в одном сегменте
+        assertEquals(listOf("волк+ов", "в+олков"), Regex("в\\+?олк\\+?ов").findAll(full("Много волков, сказал Волков.")).map { it.value }.toList())
+    }
 }
