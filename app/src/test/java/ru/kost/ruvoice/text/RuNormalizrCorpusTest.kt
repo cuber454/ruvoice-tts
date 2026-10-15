@@ -60,6 +60,7 @@ class RuNormalizrCorpusTest {
     // 13.10.2026 корпус ru-normalizr 1.3.0: safe 715 кейсов, tts 2103; было 595/586 и 1483/1477 до разбора расхождений
     companion object {
         const val MIN_MATCHED = 652; const val MIN_MATCHED_NO_MORPH = 637
-        const val MIN_MATCHED_TTS = 1834; const val MIN_MATCHED_TTS_NO_MORPH = 1807
+        // 15.10.2026 −1 tts: «1—5 марта» у них «первого — пятого марта», у нас «с первого по пятое» (жалоба пользователя)
+        const val MIN_MATCHED_TTS = 1833; const val MIN_MATCHED_TTS_NO_MORPH = 1806
     }
 }

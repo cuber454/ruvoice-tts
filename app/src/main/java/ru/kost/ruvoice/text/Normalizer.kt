@@ -430,12 +430,18 @@ object Normalizer {
         var k = n
         return buildString { for ((v, r) in listOf(10 to "X", 9 to "IX", 5 to "V", 4 to "IV", 1 to "I")) while (k >= v) { append(r); k -= v } }
     }
+    // «уже 18 века», «в 18 веке» словом — тоже римскими (жалоба 15.10.2026, было «восемнадцать века»): при «века»
+    // число на 2–4 — может быть количество («два века»), его не трогаем; «веке», «веку», «веком» — всегда порядковое.
+    private val arabicCenturyWordRe = Regex("""(?<![\p{L}\d.,:/-])(\d{1,2})(?=\s+(век[аеу]|веком)(?![а-яё]))""")
     private fun arabicCentury(text: String) = arabicCenturyRe.replace(text) { m ->
         val (a, conn, b, noun) = m.destructured
         val nums = listOfNotNull(a.toInt(), b.toIntOrNull())
         if (nums.any { it !in 1..30 }) m.value
         else toRoman(nums[0]) + (if (b.isEmpty()) "" else conn + toRoman(nums[1])) + " " + noun
-    }
+    }.let { t -> arabicCenturyWordRe.replace(t) { m ->
+        val n = m.groupValues[1].toInt()
+        if (n !in 1..30 || m.groupValues[2] == "века" && n % 10 in 2..4 && n % 100 !in 12..14) m.value else toRoman(n)
+    } }
 
     // «IX-го и X-го века» — суффикс у римской: число с тем же суффиксом; «X томов», «XII глав» перед род. мн. — количество
     private val romanSuffixRe = Regex("""(?<![\p{L}\d])([IVXLC]{1,6})-(го|й|я|е|м|ом|ой|ую|ых|х|му|ым)(?![\p{L}\d])""")
@@ -527,6 +533,8 @@ object Normalizer {
         "маргарит", "кристин", "христин", "ульрик", "беатрикс", "вильгельмин", "юлиан", "луиз", "елен", "ирин", "феодор",
         "зо", "клеопатр", "береник", "арсино", "джейн", "софь", "софи", "ядвиг", "констанци", "бланк", "джованн", "тамар",
         "русудан", "мод", "элеонор", "урак", "санч", "петронил", "агнесс", "ольг")
+    private val femaleIndecl = setOf("элизабет", "елизабет", "элизабэт", "мэри", "мери", "кэтрин", "энн", "джейн", "маргарет",
+        "изабель", "джоан", "эдит", "кармен", "ирэн", "агнес", "жанет")
     // «Елизаветы 3-й» — «-й» у женского имени в косвенном падеже: «третьей» (корпус ru-normalizr).
     private val arabicAfterFemaleNameRe = Regex("""(?<![\p{L}])([А-ЯЁ][а-яё]+)\s+(\d+)-й(?![а-яё\d])""")
     private fun romanAfterName(text: String): String {
@@ -565,6 +573,8 @@ object Normalizer {
         // без окончания имя мужское: «Иоанн IV», «Хуан II» (основы «иоанн», «хуан» — от Иоанны, Хуаны). «Александр V»
         // читалось «пятая» (жалоба 08.10.2026); «александр», «филипп» из списка убраны — «Александра II» это Александр
         // «Иоанне III», «Хуане» — у основ, общих с женским именем, «-е» мужское (Иоанн, Хуан): женское только «-а/-ы/-у/-ой»
+        // несклоняемые женские имена на согласную: «Элизабет I» — «первая», не «первый» (жалоба 15.10.2026); падеж не узнать
+        if (n in femaleIndecl) return true to Case.NOM
         val female = (stem != n && stem in femaleStems || (stem.length > 3 && stem.dropLast(1) in femaleStems)) &&
             !(stem in setOf("иоанн", "хуан") && n.last() !in "аыу" && !n.endsWith("ой"))
         val case = when {
@@ -2373,6 +2383,48 @@ object Normalizer {
         return s
     }
     private fun requisites(text: String) = requisiteRe.replace(text) { m -> m.groupValues[1] + m.groupValues[2] + spellDigits(m.groupValues[3]) }
+    // 11c. «ученик 1 класса», «капитан 4 ранга», «25 категории» — порядковое в род. п. (жалоба 15.10.2026, было
+    // «одна класса», «четыре ранга»). Слово следом в род. ед.: при числе на 5–20, 0 количественное было бы в род. мн.
+    // («пяти классов»), при числе на 1 — «одного класса», а пишут так почти всегда порядковое, поэтому всегда
+    // порядковое, и после предлога («из 5 класса» — «из пятого»). На 2–4 форма совпадает со счётной («2 класса
+    // учеников»): порядковое только за существительным по таблице морфологии («инвалид 2 группы»), не после
+    // «в/на/о/при + существительное» («в школе 2 класса») и не после глагола или предлога («открыли 2 класса»).
+    private val ordNounGender = mapOf("класса" to 'm', "разряда" to 'm', "ранга" to 'm', "уровня" to 'm', "сорта" to 'm',
+        "курса" to 'm', "созыва" to 'm', "этапа" to 'm', "категории" to 'f', "степени" to 'f', "группы" to 'f', "очереди" to 'f')
+    private val ordNounRe = Regex("""(?<![\p{L}\d.,:/‐-—-])(\d{1,3})\s+(${ordNounGender.keys.joinToString("|")})(?![\p{L}\d])""", RegexOption.IGNORE_CASE)
+    private val prevWordsRe = Regex("""(?:(\p{L}+)\s+)?(\p{L}+)\s+$""")
+    private val locPreps = setOf("в", "во", "на", "о", "об", "при")
+    private fun ordNouns(text: String) = ordNounRe.replace(text) { m ->
+        val n = m.groupValues[1].toLong()
+        if (n % 10 in 2..4 && n % 100 !in 12..14) {
+            val morph = morph ?: return@replace m.value
+            val pw = prevWordsRe.find(text.substring(maxOf(0, m.range.first - 60), m.range.first)) ?: return@replace m.value
+            val t = morph.tags(pw.groupValues[2].lowercase())
+            if (!Morph.isNoun(t) || Morph.isAdjective(t) || pw.groupValues[1].lowercase() in locPreps) return@replace m.value
+        }
+        m.withGroupReplaced(1 to ordinal(n, if (ordNounGender.getValue(m.groupValues[2].lowercase()) == 'f') "ой" else "го"))
+    }
+
+    // 11d. Диапазон дней перед месяцем: «3-15 мая», «7…9 апреля» → «с третьего по пятнадцатое мая» (жалоба 15.10.2026,
+    // было «три-пятнадцать мая»). После «с/со» — то же, предлог не дублируем. После другого предлога «с … по» не
+    // вставить («до 7-9 апреля», «на 3-15 мая») — оба дня в падеже по предлогу, как в dayMonth(), через тире.
+    private val dayRangeRe = Regex(
+        """(?<![\p{L}\d.,:/‐-—-])(?:(с|со)\s+)?(\d{1,2})\s*[‐-—…-]\s*(\d{1,2})(\s+)($monthGenAlt)(?![а-яё])""",
+        RegexOption.IGNORE_CASE
+    )
+    private val anyPrepRe = Regex("""(?<![\p{L}])(?:к|ко|до|после|от|перед|на|в|во|по|о|об|около|начиная\s+с)\s+$""", RegexOption.IGNORE_CASE)
+    private fun dayRanges(text: String) = dayRangeRe.replace(text) { m ->
+        val (s, a, b, sp, month) = m.destructured
+        val n1 = a.toLong(); val n2 = b.toLong()
+        if (n1 !in 1..30 || n2 !in 2..31 || n1 >= n2) return@replace m.value
+        val before = text.substring(maxOf(0, m.range.first - 30), m.range.first)
+        if (s.isEmpty() && anyPrepRe.containsMatchIn(before)) {
+            val suf = daySuffix(before)
+            return@replace "${ordinal(n1, suf)} — ${ordinal(n2, suf)}$sp$month"
+        }
+        val prep = if (n1 == 2L) "со" else "с"
+        "${if (s.isNotEmpty() && s[0].isUpperCase()) prep.replaceFirstChar { it.uppercase() } else prep} ${ordinal(n1, "го")} по ${ordinal(n2, "е")}$sp$month"
+    }
 
     // 12. Падеж числительного (task 19b): предлог-триггер перед числом или окончание соседнего
     // слова задают падеж — «около 500 рублей» → «около пятисот рублей», «в 5 случаях» →
@@ -3231,6 +3283,8 @@ object Normalizer {
         s = step("numbers", ::numberSigns)(s)
         s = step("numbers", ::listsAndOrdinals)(s)
         s = step("numbers", ::chapterOrdinals)(s)
+        s = step("numbers", ::ordNouns)(s)
+        s = step("day_month", ::dayRanges)(s)
         // после abbreviations: «п. 2.10.3» должно сначала стать «пункт», а уже потом раскрыть номер
         s = step("sections", ::sectionNumbers)(s)
         s = step("numbers", ::halfScales)(s)

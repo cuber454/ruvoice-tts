@@ -50,6 +50,35 @@ class CasesTest {
         assertEquals("с пятого по десятое мая", n("с 5 по 10 мая"))
     }
 
+    @Test fun dayRangeBeforeMonth() {
+        assertEquals("с третьего по пятнадцатое мая", n("3-15 мая"))
+        assertEquals("с третьего по пятнадцатое мая", n("3–15 мая"))
+        assertEquals("с седьмого по девятое апреля", n("7…9 апреля"))
+        assertEquals("с третьего по пятнадцатое мая", n("с 3-15 мая"))
+        assertEquals("со второго по пятое мая", n("2-5 мая"))
+        assertEquals("до седьмого — девятого апреля", n("до 7-9 апреля"))
+        assertEquals("на третье — пятнадцатое мая", n("на 3-15 мая"))
+        assertEquals("к седьмому — девятому апреля", n("к 7-9 апреля"))
+    }
+
+    @Test fun centuryInWordsIsOrdinal() {   // жалоба 15.10.2026: «уже 18 века» читалось «восемнадцать века»
+        assertEquals("в самый конец, но уже восемнадцатого века.", n("в самый конец, но уже 18 века."))
+        assertEquals("в девятнадцатом веке", n("в 19 веке"))
+        assertEquals("два века", n("2 века"))   // на 2–4 — количество
+    }
+
+    @Test fun indeclinableFemaleNameWithRoman() {
+        assertEquals("Элизабет первая", n("Элизабет I"))
+    }
+
+    @Test fun ordinalBeforeRankNoun() {
+        assertEquals("ученик первого класса", n("ученик 1 класса"))
+        assertEquals("из первого класса", n("из 1 класса"))
+        assertEquals("до пятого класса", n("до 5 класса"))
+        assertEquals("ученица двадцать первого класса", n("ученица 21 класса"))
+        assertEquals("стоимость двадцать пятой категории", n("стоимость 25 категории"))
+    }
+
     @Test fun hyphenRangeDoesNotBecomeMinus() {
         // финальный fix-раунд п.1: дефис в диапазоне «N-M» — не минус, только когда перед ним
         // нет буквы/цифры («минус» остаётся у «-5», см. RulesTest.degrees).
