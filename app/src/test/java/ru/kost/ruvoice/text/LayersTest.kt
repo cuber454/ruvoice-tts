@@ -35,8 +35,9 @@ class LayersTest {
     @Test fun belPrepare() {
         // числа словами, латиница транслитом, фильтр по символам модели
         assertEquals("дзве тысячы дваццаць шэсць", BeLayer.prepare("2026", "абвгдеёжзійклмнопрстуўфхцчшыьэюя+,. ", Rules()))
-        // «!» в модель не идёт (служебный символ), апострофа в таблице нет
+        // «!» и апостроф в модель не идут (служебные символы cis-пака); апостроф — во всех написаниях
         assertEquals("прывет.", BeLayer.prepare("Прыв'ет!", "абвгдеёжзійклмнопрстуўфхцчшыьэюя+,. ", Rules()))
+        for (a in listOf("'", "’", "`", "´", "ʼ", "‘")) assertEquals("абява", BeLayer.prepare("аб${a}ява", "абвгдеёжзійклмнопрстуўфхцчшыьэюя+,. ", Rules()))
     }
 
     @Test fun belQuestions() {
@@ -78,6 +79,11 @@ class LayersTest {
         assertEquals("так. — сказаў ён.", BeLayer.prepare("«Так!» — сказаў ён.", cis, Rules()))
         assertEquals("ён сказаў: так.", BeLayer.prepare("Ён сказаў: «Так».", cis, Rules()))
         assertEquals("кніга, том два, тут", BeLayer.prepare("Кніга (том 2) тут", cis, Rules()))
+        // после тире запятая от кавычки или скобки не нужна
+        assertEquals("адказ адзін — не.", BeLayer.prepare("Адказ адзін — «не».", cis, Rules()))
+        assertEquals("— так, — сказаў ён.", BeLayer.prepare("— «Так», — сказаў ён.", cis, Rules()))
+        assertEquals("— ціха, так.", BeLayer.prepare("— (ціха) Так.", cis, Rules()))
+        assertEquals("сказаў: так.", BeLayer.prepare("Сказаў: «так».", cis, Rules()))
     }
 
     @Test fun belQuestionWords() {
@@ -95,6 +101,17 @@ class LayersTest {
         assertEquals("alternative_q", SentenceType.classify("Пойдзем пешшу або паедзем?", q))
         assertEquals("general_q", SentenceType.classify("Ці прыйдзеш ты заўтра?", q))
         assertEquals("general_q", SentenceType.classify("Вам чай или каву?", q))
+        // «ці» после тире и запятой — тоже частица, не альтернатива
+        assertEquals("general_q", SentenceType.classify("— Ці прыйдзеш?", q))
+        assertEquals("general_q", SentenceType.classify("Скажы, ці прыйдзеш?", q))
+        assertEquals("alternative_q", SentenceType.classify("Чай ці каву?", q))
+        // хвост — только в конце после запятой; нормативные «праўда», «не праўда»
+        assertEquals("general_q", SentenceType.classify("Ты так жа думаеш?", q))
+        assertEquals("general_q", SentenceType.classify("Гэта праўда?", q))
+        assertEquals("general_q", SentenceType.classify("Гэта не праўда?", q))
+        assertEquals("tag_q", SentenceType.classify("Ты прыйдзеш, праўда?", q))
+        assertEquals("tag_q", SentenceType.classify("Ты прыйдзеш, не праўда?", q))
+        assertEquals("tag_q", SentenceType.classify("Ты прыйдзеш, так жа?", q))
         // русский союз остаётся у русского
         assertEquals("alternative_q", SentenceType.classify("Чай или кофе?", RuLayer.questions(TestData.data())))
     }
@@ -119,18 +136,26 @@ class LayersTest {
         val d = TestData.data()
         val echo = Rules().with("letter_echo_all", true)
         fun first(t: String, rules: Rules = Rules()) = Pipeline.plan(t, d, 0, 0, rules = rules, layer = BeLayer, allowed = cis).single().text
-        // одиночный знак и эхо удаления — белорусскими именами (формы не проверены носителем)
-        assertEquals("клічнік", first("!"))
-        assertEquals("кропка з коскай", first(";"))
-        assertEquals("адкрываецца дужка", first("("))
+        // эхо удаления — белорусскими именами (формы не проверены носителем)
+        assertEquals("клічнік", BeLayer.symbolName('!', punct = true))
+        assertEquals("кропка з коскай", BeLayer.symbolName(';', punct = true))
+        assertEquals("адкрываецца дужка", BeLayer.symbolName('(', punct = true))
+        assertEquals("закрываецца двукоссе", BeLayer.symbolName('»', punct = true))
+        assertEquals("кароткі працяжнік", BeLayer.symbolName('–', punct = true))
         assertEquals("удаление, коска", first("Удаление ,", echo))
-        // апостроф «двукроп'е» снимает BelNormalizer — слово целое
-        assertEquals("двукропе", BeLayer.prepare(first(":"), cis, Rules()))
+        assertEquals("удаление, адкрываецца двукоссе", first("Удаление «", echo))
+        // без эха обычная пунктуация не называется — как у русского
+        assertEquals(null, BeLayer.symbolName('!'))
+        assertEquals(null, BeLayer.symbolName(','))
+        // апостроф «двукроп'е», «шматкроп'е» снимает BelNormalizer — слово целое
+        assertEquals("двукропе", BeLayer.prepare(BeLayer.symbolName(':', punct = true)!!, cis, Rules()))
+        assertEquals("шматкропе", BeLayer.prepare(BeLayer.symbolName('…', punct = true)!!, cis, Rules()))
         // прочие знаки — как есть, не русскими словами
         assertEquals(null, BeLayer.symbolName('#'))
         assertEquals(null, BeLayer.symbolName('@', punct = true))
         // русский — как был: в эхе своя пунктуация, иначе SymbolNames
         assertEquals("запятая", RuLayer.symbolName(',', punct = true))
+        assertEquals(null, RuLayer.symbolName(',', punct = false))
         assertEquals("решётка", RuLayer.symbolName('#'))
     }
 

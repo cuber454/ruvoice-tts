@@ -2,6 +2,7 @@ package ru.kost.ruvoice
 
 import android.util.Log
 import org.json.JSONObject
+import ru.kost.ruvoice.text.BelNormalizer
 import ru.kost.ruvoice.text.Layers
 import java.io.EOFException
 import java.io.File
@@ -39,7 +40,7 @@ class Pack(json: String, val dir: File) {
      * Апостроф («аб'ява») убираем с обеих сторон: BelNormalizer снимает его до ударений, и слово с ним не нашлось бы. */
     val corrections: Map<String, String> by lazy {
         val f = File(dir, Packs.STRESS)
-        val apo = Regex("['’]")
+        val apo = BelNormalizer.APOSTROPHE
         if (!f.isFile) emptyMap() else HashMap<String, String>().also { out ->
             f.forEachLine { line -> DictLines.parseStress(line)?.let { (w, v) -> out[w.lowercase().replace(apo, "")] = v.replace(apo, "") } }
         }

@@ -72,9 +72,16 @@ class DictCacheTest {
         val r0 = DictCache.replacements(listOf(ru))
         DictCache.warm(listOf(be), Dicts.Kind.REPLACE, {}, {}, lang = "be").join()
         assertSame(r0, DictCache.replacements(listOf(ru)))
-        val s0 = DictCache.stress(listOf(ru))
-        DictCache.warm(listOf(be), Dicts.Kind.STRESS, {}, {}, lang = "be").join()
-        assertSame(s0, DictCache.stress(listOf(ru)))
+        // снимок be собран прогревом: запрос берёт его, не разбирая заново (прогресс зовётся только при разборе)
+        var rebuilt = false
+        assertEquals("к+от", DictCache.replacements(listOf(be), { rebuilt = true }, lang = "be").apply("кот"))
+        assertFalse(rebuilt)
+        val ruS = file("warm_ru_s.txt", "кот к+от\n"); val beS = file("warm_be_s.txt", "кот к+от\n")
+        val s0 = DictCache.stress(listOf(ruS))
+        DictCache.warm(listOf(beS), Dicts.Kind.STRESS, {}, {}, lang = "be").join()
+        assertSame(s0, DictCache.stress(listOf(ruS)))
+        assertEquals("к+от", DictCache.stress(listOf(beS), { rebuilt = true }, lang = "be")["кот"])
+        assertFalse(rebuilt)
     }
 
     @Test fun warmReportsProgressAndDone() {

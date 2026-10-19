@@ -65,8 +65,8 @@ class PackTest {
     @Test fun correctionsWithoutApostrophe() {
         // BelNormalizer снимает апостроф до ударений: «аб'ява» в тексте приходит как «абява»
         val dir = Files.createTempDirectory("packapo").toFile()
-        File(dir, Packs.STRESS).writeText("аб'ява аб'+ява\nсям’я сям’+я\n")
-        assertEquals(mapOf("абява" to "аб+ява", "сямя" to "сям+я"), Pack(packJson.toString(), dir).corrections)
+        File(dir, Packs.STRESS).writeText("аб'ява аб'+ява\nсям’я сям’+я\nвераб‘і вераб‘+і\nп`ю п`+ю\n")
+        assertEquals(mapOf("абява" to "аб+ява", "сямя" to "сям+я", "верабі" to "вераб+і", "пю" to "п+ю"), Pack(packJson.toString(), dir).corrections)
     }
 
     @Test fun formatsTwoAndThree() {

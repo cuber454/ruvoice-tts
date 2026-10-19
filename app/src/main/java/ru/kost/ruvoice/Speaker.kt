@@ -31,12 +31,21 @@ class Speaker(val name: String, val pack: Pack?, val id: Int, val sym: Symbols, 
             return of(pack, name.substring(i + 1))
         }
 
-        /** Голос по умолчанию: «xenia» (штатная или из пака ru), иначе голос по умолчанию пака (поле default: в lite
-         * только с cis_be — bel_larisa), иначе первый голос первого пака; null — голосов нет. */
+        /** Голос по умолчанию: «xenia» (штатная или из пака ru), иначе первый русский (lite с cis_ru и cis_be: русский
+         * текст — русским голосом и слоем), иначе голос по умолчанию пака (поле default: в lite только с cis_be —
+         * bel_larisa), иначе первый голос первого пака; null — голосов нет. */
         fun default(d: SileroData, packs: List<Pack>): Speaker? = defaultName(d.speakers.keys, packs)?.let { resolve(it, d, packs) }
         /** Имя [default] без SileroData — по одним именам штатных голосов, как [exists]. */
-        fun defaultName(builtinNames: Set<String>, packs: List<Pack>): String? = DEFAULT.takeIf { exists(it, builtinNames, packs) }
-            ?: packs.firstNotNullOfOrNull { p -> p.defaultVoice?.let { packName(p, it) } } ?: names(builtinNames, packs).firstOrNull()
+        fun defaultName(builtinNames: Set<String>, packs: List<Pack>): String? {
+            val all = names(builtinNames, packs)
+            return DEFAULT.takeIf { exists(it, builtinNames, packs) } ?: all.firstOrNull { lang(it, packs) == "ru" }
+                ?: packs.firstNotNullOfOrNull { p -> p.defaultVoice?.let { packName(p, it) } } ?: all.firstOrNull()
+        }
+
+        /** Голос, которым читает сервис: [voice] из настроек, если он есть, иначе [defaultName] (пустой или голос удалённого
+         * пака). Им же настройки выбирают язык словарей. */
+        fun currentName(voice: String?, builtinNames: Set<String>, packs: List<Pack>): String? =
+            voice.takeIf { exists(it, builtinNames, packs) } ?: defaultName(builtinNames, packs)
 
         /** Есть ли хоть один голос: встроенная модель или пак с голосами. Без разбора silero_ru.json. */
         fun hasVoices(packs: List<Pack>) = builtin || packs.any { it.speakers.isNotEmpty() }

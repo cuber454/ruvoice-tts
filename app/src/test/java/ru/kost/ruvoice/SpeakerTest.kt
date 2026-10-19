@@ -96,6 +96,14 @@ class SpeakerTest {
             assertEquals("ru/xenia", Speaker.default(d, listOf(ruPack, cisBe("bel_larisa")))!!.name)
             assertEquals("cis_be/bel_larisa", Speaker.defaultName(d.speakers.keys, listOf(cisBe("bel_larisa"))))
             assertEquals("xenia", Speaker.defaultName(d.speakers.keys, listOf(ruPack)))
+            // пака ru нет, но есть русский cis_ru: русский голос, а не default белорусского пака (порядок паков не важен)
+            assertEquals("cis_ru/ru_aigul", Speaker.default(d, listOf(cisBe("bel_larisa"), pack))!!.name)
+            assertEquals("cis_ru/ru_aigul", Speaker.defaultName(d.speakers.keys, listOf(pack, cisBe("bel_larisa"))))
+            // голос сервиса и язык словарей настроек: пустой или голос удалённого пака — голос по умолчанию
+            assertEquals("cis_be/bel_larisa", Speaker.currentName("", d.speakers.keys, listOf(cisBe("bel_larisa"))))
+            assertEquals("cis_be/bel_larisa", Speaker.currentName("xenia", d.speakers.keys, listOf(cisBe("bel_larisa"))))
+            assertEquals("cis_ru/ru_aigul", Speaker.currentName("cis_be/bel_larisa", d.speakers.keys, listOf(pack)))
+            assertEquals("cis_be/bel_anatoliy", Speaker.currentName("cis_be/bel_anatoliy", d.speakers.keys, listOf(pack, cisBe("bel_larisa"))))
         }
         // full и русские паки без default — как было
         assertEquals("xenia", Speaker.default(d, listOf(pack, cisBe("bel_larisa")))!!.name)

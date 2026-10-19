@@ -596,7 +596,8 @@ class Stress(private val d: SileroData, private val models: StressModels, privat
             var setStress = passedStress && !haveStress
             val yoPred = yp.indices.maxByOrNull { yp[it] } ?: 0
             val yoVowelIds = listOf(yoPred)
-            val setYo = yp[yoPred] > 0.5f && cleanWord !in userDict   // «бытие быти+е» в словаре: модель не ставит «ё», иначе словарь слово не найдёт
+            // акцентор без второго выхода (пак bel/ukr) отдаёт пустые строки «ё»
+            val setYo = yp.isNotEmpty() && yp[yoPred] > 0.5f && cleanWord !in userDict   // «бытие быти+е» в словаре: модель не ставит «ё», иначе словарь слово не найдёт
             if (haveStress) stressedVowelIds = lower.split("+").map { part -> part.count { it in vowels } }
             val pos = positions(lower, stressedVowelIds, yoVowelIds)
             if (pos.numVowels == 0) { out.append(rawWord); continue }

@@ -11,7 +11,7 @@ package ru.kost.ruvoice.text
  *  - числа словами (в таблице символов модели цифр нет — они выпадали из речи);
  *  - «!» → «.» (восклицательный знак стоит в первых трёх служебных символах, Silero их вырезает,
  *    а токен «!» при обучении не использовался; интонацию восклицания делаем питчем отдельно);
- *  - апостроф убираем (белорусское «аб'ява» — апострофа в таблице символов нет);
+ *  - апостроф убираем (белорусское «аб'ява»: в символах cis-пака он служебный и до модели не доходит);
  *  - скобки и кавычки → запятая (вставка читается с паузой, как в русском RuVoice);
  *  - всё, чего в таблице символов нет, выкидываем.
  */
@@ -107,7 +107,14 @@ object BelNormalizer {
     }
 
     /** Число по цифрам: «80291234567» → «восем нуль два…». */
-    fun digits(raw: String) = raw.map { UNITS[it - '0'] }.joinToString(" ")
+    fun digits(raw: String) = raw.map { UNITS[it.digitToInt()] }.joinToString(" ")
+
+    /** Группа цифр как написана: нули в начале — словом каждый («029» — «нуль дваццаць дзевяць», «05» в дроби). */
+    fun group(raw: String): String {
+        val rest = raw.trimStart('0')
+        val tail = rest.takeIf { it.isNotEmpty() }?.let { r -> r.toLongOrNull()?.let { cardinal(it) } ?: digits(r) }
+        return (List(raw.length - rest.length) { UNITS[0] } + listOfNotNull(tail)).joinToString(" ")
+    }
 
     /** С миллиарда — по цифрам: разрядов дальше нет (телефон, номер карты), а under1000 на них падал. */
     private const val BIG = 1_000_000_000L
@@ -185,7 +192,8 @@ object BelNormalizer {
     }
 
     // «гадоў», «гадах» — после количественного («100 гадоў»), год порядковым только в единственном числе
-    private val YEAR_RE = Regex("(\\d{3,4})\\s*(год|года|годзе)(?![а-яёіў])", RegexOption.IGNORE_CASE)
+    // слева не цифра и не разряд: «1 000 год», «12345 год» — не год «000» и «2345»
+    private val YEAR_RE = Regex("(?<![\\d.,])(?<!\\d[ \\u00A0\\u202F])(\\d{3,4})\\s*(год|года|годзе)(?![а-яёіў])", RegexOption.IGNORE_CASE)
     /** Разряды тысяч через пробел — только группами по три («1 000 000») и без соседних групп: телефон
      * «29 123 45 67», номер карты «4276 1234…» и «1 2 3» — отдельные числа. */
     private val DIGIT_GROUP_RE = Regex("(?<!\\d[ \\u00A0\\u202F]?)\\d{1,3}(?:[ \\u00A0\\u202F]\\d{3})+(?![ \\u00A0\\u202F]?\\d)|\\d+")
@@ -215,30 +223,51 @@ object BelNormalizer {
         return s
     }
 
+    /** Телефон с дефисами: «8 029 123-45-67», «+375 (29) 123-45-67», «222-33-44» — группами как написано, с паузой
+     * между ними. Без хвоста «-xx-xx» не телефон: «10 000-15 000», «10-15», «1990-2000». */
+    private val PHONE_RE = Regex("""(?<![\d\p{L}])(?:\d{1,5}[ \x{A0}-]|\(\d{1,5}\)[ \x{A0}-]?){0,3}\d{2,3}-\d{2}-\d{2}(?![\d\p{L}]|-\d)""")
+    private val DIGITS_RE = Regex("\\d+")
+    private fun phones(text: String) = PHONE_RE.replace(text) { m -> DIGITS_RE.findAll(m.value).joinToString(", ") { group(it.value) } }
+
     /** Гласная со знаком ударения над ней (U+0301 пишет «Книга с ударениями», гравис U+0300 — словари): «+» перед ней. */
     private val COMBINING_ACUTE_RE = Regex("([аеёіоуыэюяАЕЁІОУЫЭЮЯ])[\\u0301\\u0300]")
     /** Мягкий перенос книг и невидимые соединители: выкидываем, иначе фильтр рвал слово пробелом. */
     private val ZERO_WIDTH_RE = Regex("[\\u00AD\\u200B-\\u200D\\u2060\\uFEFF]")
-    /** «+» не перед гласной — не ударение: «+375» — «плюс». */
+    /** «+» не перед гласной — не ударение: «C++» — «плюс». */
     private val PLUS_NOT_STRESS_RE = Regex("\\+(?![аеёіоуыэюя])")
+    /** Знак перед числом — до чисел: иначе «+1» становится «+адзін» (ударение), а «-20» теряет минус. Минус — не после
+     * буквы и цифры: «10-15», «8-029», «1990-я», «Ту-154» не трогаем. */
+    private val PLUS_NUMBER_RE = Regex("\\+(?=\\s*\\d)")
+    private val MINUS_NUMBER_RE = Regex("(?<![\\p{L}\\d])[-−](?=\\d)")
+    /** Цифры Nd не из ASCII (арабо-индийские, полноширинные): \d в ICU их ловит, а таблицы чисел — нет. */
+    private val OTHER_DIGIT_RE = Regex("(?![0-9])\\p{Nd}")
+    /** Апостроф во всех написаниях. В символах cis-пака он есть, но служебный (первые три, Silero их вырезает): до
+     * модели не доходит, «аб'ява» читается «абява». Тем же классом его снимают поправки пака (Pack.corrections). */
+    val APOSTROPHE = Regex("[’'`´ʼ‘]")
     /** Градусы Цельсия латинской или кириллической «C» — к одной записи «°с» (кириллица). */
     private val CELSIUS_RE = Regex("°\\s*[CcСс](?!\\p{L})")
     private val COMMA_RUN_RE = Regex(",(?:\\s*,)+")
-    private val COMMA_EDGE_RE = Regex("^[\\s,]+|(?<=[:;.?…])\\s*,|\\s*,(?=\\s*(?:[.?…;:]|$))")
+    // и после тире: «— «Так», —» и «— (ціха) Так» не дают «—, так»
+    private val COMMA_EDGE_RE = Regex("^[\\s,]+|(?<=[:;.?…—])\\s*,|\\s*,(?=\\s*(?:[.?…;:]|$))")
     private val SPACE_BEFORE_PUNCT_RE = Regex("\\s+(?=[.,?…:;])")
     private val WS_RE = Regex("\\s+")
 
     /** Итоговая подготовка: латиница, числа, знаки, фильтр по таблице символов модели. */
     fun prepare(text: String, allowed: String): String {
         var s = COMBINING_ACUTE_RE.replace(text) { "+" + it.groupValues[1] }.replace(ZERO_WIDTH_RE, "")
+        s = OTHER_DIGIT_RE.replace(s) { Character.digit(it.value.codePointAt(0), 10).toString() }
         // «°C» латиницей — до Latin, иначе она делает из «C» «к» и единица не находится
         s = CELSIUS_RE.replace(s, "°с")
+        s = BelNumbers.roman(s)                       // «XX стагоддзе» — до Latin, иначе «экс-экс»
         // латиницы в таблице символов модели нет вовсе — «FilmBell» раньше просто выпадало
         s = Latin.translate(s).lowercase()
-        s = s.replace(Regex("[’'`´ʼ]"), "")           // апостроф в таблице символов отсутствует
+        s = s.replace(APOSTROPHE, "")
+        s = MINUS_NUMBER_RE.replace(PLUS_NUMBER_RE.replace(s, " плюс "), " мінус ")
+        s = phones(s)
         // даты и время — до единиц: у них внутри цифры со знаками (12.05.2026, 21:30)
         s = BelNumbers.dates(s)
         s = BelNumbers.times(s)
+        s = BelNumbers.ordinals(s)                    // «1-га верасня», «5-ы клас», «1990-я»
         s = BelNumbers.abbreviations(s)               // «1999 г.» → «1999 год»
         s = BelNumbers.units(s)                       // «3 км» → «тры кіламетры»
         s = BelNumbers.standalone(s)                  // «руб.» без числа

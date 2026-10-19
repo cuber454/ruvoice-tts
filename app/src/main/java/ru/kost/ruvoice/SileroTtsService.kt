@@ -313,8 +313,8 @@ class SileroTtsService : TextToSpeechService() {
             val cur = currentName()
             val lang = cur?.let { Speaker.lang(it, packs()) } ?: "ru"
             prefs.userDict(lang); prefs.replacements(lang)
-            // поправки пака (stress.txt) ленивые: иначе их разбор пришёлся бы на первую фразу
-            cur?.let { packOf(it)?.corrections }
+            // поправки пака (stress.txt) ленивые: иначе их разбор пришёлся бы на первую фразу; русский их не читает
+            if (lang != "ru") cur?.let { packOf(it)?.corrections }
         }.onFailure { Log.e(SileroModels.TAG, "прогрев", it) } }.apply { start() }
         // греем тройку голоса из настроек, а не штатную: иначе первый запрос перегружает 90 МБ; пак — по имени, без data
         val name = currentName() ?: return   // lite без пака: голосов нет
@@ -385,10 +385,9 @@ class SileroTtsService : TextToSpeechService() {
         // Загружен любой голос — не трогаем: запрос сам загрузит свой (request.voiceName), а голос из настроек здесь
         // выгнал бы голос чтеца, и следующая фраза снова грузила бы модель — секунды тишины на каждой.
         if (r == TextToSpeech.LANG_COUNTRY_AVAILABLE && Looper.myLooper() != Looper.getMainLooper() && !models.loaded) {
-            // не русский — голос этого языка (тот же, что onGetDefaultVoiceNameFor) и его пак, а не голос из настроек
-            val code = Layers.ofIso3(lang)?.code
-            val pack = if (code != null && code != "ru") packOf(voiceFor(code))
-                else (currentSpeaker() ?: return TextToSpeech.LANG_MISSING_DATA).pack   // lite без пака: читалка предложит установить данные
+            // голос этого языка (тот же, что onGetDefaultVoiceNameFor) и его пак, а не голос из настроек: при белорусском
+            // голосе и системе не ru русский — xenia, а не cis_be. COUNTRY_AVAILABLE — язык из Layers и голоса есть
+            val pack = packOf(voiceFor(Layers.ofIso3(lang)?.code ?: return r))
             runCatching { models.ensureLoaded(pack) }.onFailure {
                 Log.e(SileroModels.TAG, "загрузка моделей", it); return TextToSpeech.LANG_NOT_SUPPORTED
             }
@@ -417,7 +416,7 @@ class SileroTtsService : TextToSpeechService() {
     private fun voiceNames() = Speaker.names(SileroModels.speakers(this), packs())
     private fun known(name: String?) = Speaker.exists(name, SileroModels.speakers(this), packs())
     /** Имя [currentSpeaker] без SileroData. */
-    private fun currentName(): String? = prefs.voice.takeIf { known(it) } ?: Speaker.defaultName(SileroModels.speakers(this), packs())
+    private fun currentName(): String? = Speaker.currentName(prefs.voice, SileroModels.speakers(this), packs())
 
     // Голоса — каждый со своей локалью по языку пака: по ней TalkBack и читалки находят белорусский голос
     // и могут сами попросить белорусский язык (LocaleSpan). Имена те же, что раньше: язык в имени голоса уже есть.
