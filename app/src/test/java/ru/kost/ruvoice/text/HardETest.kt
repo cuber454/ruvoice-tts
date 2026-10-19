@@ -13,6 +13,7 @@ class HardETest {
         assertEquals("Эн+эргия, энэрг+ичный, энэрг+етика и т+эст.", h.apply("Эн+ергия, энерг+ичный, энерг+етика и т+ест."))
         assertEquals("б+изнэс-пл+ан, про+экт, тэстост+эрон", h.apply("б+изнес-пл+ан, про+ект, тестост+ерон"))
         assertEquals("Аним+э", h.apply("Аним+е"))  // MANUAL в hard_e.py
+        assertEquals("паста альд+энтэ, аль д+энтэ", h.apply("паста альд+енте, аль д+енте"))
     }
 
     @Test fun shortStemsDoNotSpill() {
