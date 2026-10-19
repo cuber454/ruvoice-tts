@@ -51,20 +51,24 @@ object BelNumbers {
 
     // ---- даты ----
 
-    /** 12.05.2026 → «дванаццатага мая дзве тысячы дваццаць шостага года»; 3.09 → «трэцяга верасня». */
-    fun dates(text: String): String = DATE.replace(text) { m ->
-        val d = m.groupValues[1].toIntOrNull() ?: return@replace m.value
-        val mo = m.groupValues[2].toIntOrNull() ?: return@replace m.value
-        if (d !in 1..31 || mo !in 1..12) return@replace m.value
-        val yearRaw = m.groupValues.getOrNull(3).orEmpty()
-        val sb = StringBuilder(BelNormalizer.ordinal(d.toLong(), BelNormalizer.Form.GEN))
-        sb.append(' ').append(MONTHS[mo - 1])
-        if (yearRaw.isNotEmpty()) {
-            val y0 = yearRaw.toLongOrNull() ?: return@replace m.value
-            val y = if (yearRaw.length <= 2) 2000 + y0 else y0
-            sb.append(' ').append(BelNormalizer.ordinal(y, BelNormalizer.Form.GEN)).append(" года")
+    /** 12.05.2026 → «дванаццатага мая дзве тысячы дваццаць шостага года»; 3.09 → «трэцяга верасня».
+     * Без года — только «дд.мм» через точку: «1.5 кг», «1/2 шклянкі», «24/7» — не даты, их читают числа. */
+    fun dates(text: String): String {
+        fun date(m: MatchResult, dRaw: String, moRaw: String, yearRaw: String): String {
+            val d = dRaw.toInt(); val mo = moRaw.toInt()
+            if (d !in 1..31 || mo !in 1..12) return m.value
+            val sb = StringBuilder(BelNormalizer.ordinal(d.toLong(), BelNormalizer.Form.GEN))
+            sb.append(' ').append(MONTHS[mo - 1])
+            if (yearRaw.isNotEmpty()) {
+                val y0 = yearRaw.toLong()
+                // двузначный год: «99» — 1999, «20» — 2020
+                val y = if (yearRaw.length <= 2) (if (y0 > 30) 1900 else 2000) + y0 else y0
+                sb.append(' ').append(BelNormalizer.ordinal(y, BelNormalizer.Form.GEN)).append(" года")
+            }
+            return sb.toString()
         }
-        sb.toString()
+        val s = DATE.replace(text) { m -> date(m, m.groupValues[1], m.groupValues[3], m.groupValues[4]) }
+        return DAY_MONTH.replace(s) { m -> date(m, m.groupValues[1], m.groupValues[2], "") }
     }
 
     // ---- время ----
@@ -104,7 +108,9 @@ object BelNumbers {
         "г" to Triple("грам", "грамы", "грамаў"),
         "т" to Triple("тона", "тоны", "тон"),
         "шт" to Triple("штука", "штукі", "штук"),
-        "°c" to Triple("градус Цэльсія", "градусы Цэльсія", "градусаў Цэльсія"),
+        // «с» кириллицей: BelNormalizer сводит к ней «°C» до латиницы. Строчными: регистр опущен до единиц,
+        // а заглавной «Ц» в символах модели нет
+        "°с" to Triple("градус цэльсія", "градусы цэльсія", "градусаў цэльсія"),
         "%" to Triple("працэнт", "працэнты", "працэнтаў"),
         "руб" to Triple("рубель", "рублі", "рублёў"),
         "кап" to Triple("капейка", "капейкі", "капеек"),
@@ -131,35 +137,39 @@ object BelNumbers {
 
     // ---- сокращения ----
 
-    /** «1999 г.» → «1999 год», «90-я гг.» → «90-я гады», «5 тыс.» уже разобрано единицами. */
+    /** «1999 г.» → «1999 год», «90-я гг.» → «90-я гады», «5 тыс.» уже разобрано единицами.
+     * «5 г.» — граммы (units): год — только 3–4 цифры ([YEAR_G]). */
     fun abbreviations(text: String): String {
         var s = text
         s = YEAR_G.replace(s) { m -> m.groupValues[1] + " год" }
         s = GG.replace(s, "гады")
-        s = s.replace(Regex("""(?<=\d)\s*г\.(?=\s|$)"""), " год")
         return s
     }
 
-    /** Сокращение без числа: «руб.» после «5 тыс.» или «г.» перед названием города. */
+    /** Сокращение без числа: «руб.» после «5 тыс.» или «г.» перед названием города. Только отдельным словом:
+     * «капуста», «рубель» и уже развёрнутое единицами «два рублі» не трогаем. */
     fun standalone(text: String): String {
         var s = text
         s = s.replace(Regex("""(?<!\p{L})г\.(?=\s)"""), "горад ")
-        s = s.replace(Regex("""(?<![\d])руб\.?"""), "рублёў")
-        s = s.replace(Regex("""(?<![\d])кап\.?"""), "капеек")
-        s = s.replace(Regex("""(?<![\d])тыс\."""), "тысяч")
-        s = s.replace(Regex("""(?<![\d])млрд"""), "мільярдаў")
-        s = s.replace(Regex("""(?<![\d])млн"""), "мільёнаў")
-        s = s.replace(Regex("""(?<![\d])шт\."""), "штук")
+        s = s.replace(Regex("""(?<![\p{L}\d])руб\.?(?!\p{L})"""), "рублёў")
+        s = s.replace(Regex("""(?<![\p{L}\d])кап\.?(?!\p{L})"""), "капеек")
+        s = s.replace(Regex("""(?<![\p{L}\d])тыс\.(?!\p{L})"""), "тысяч")
+        s = s.replace(Regex("""(?<![\p{L}\d])млрд(?!\p{L})"""), "мільярдаў")
+        s = s.replace(Regex("""(?<![\p{L}\d])млн(?!\p{L})"""), "мільёнаў")
+        s = s.replace(Regex("""(?<![\p{L}\d])шт\.(?!\p{L})"""), "штук")
         return s
     }
 
-    private val DATE = Regex("""(?<!\d)(\d{1,2})[.\/](\d{1,2})(?:[.\/](\d{2,4}))?(?!\d)""")
+    /** С годом: «12.05.2026», «12/05/26»; не после цифры и знака — иначе кусок большого числа. */
+    private val DATE = Regex("""(?<![\d.,])(\d{1,2})([./])(\d{1,2})\2(\d{4}|\d{2})(?!\d)""")
+    /** Без года: «3.09» — месяц двумя цифрами, не дробь «1.5» и не кусок «1.10.2». */
+    private val DAY_MONTH = Regex("""(?<![\d.,])(\d{1,2})\.(\d{2})(?!\d|[.,]\d)""")
     private val TIME = Regex("""(?<!\d)(\d{1,2}):(\d{2})(?!\d)""")
     private val YEAR_G = Regex("""(?<!\d)(\d{3,4})\s*г\.""")
     private val GG = Regex("""(?<!\p{L})гг\.?""", RegexOption.IGNORE_CASE)
     private val NUMBER_UNIT = Regex(
         // длинные варианты раньше коротких: иначе «5 тыс.» разобралось бы как «5 т» (тоны).
         // Справа не буква: иначе «2026 год» — это «2026 г» (граммы) и «од», а «3 тамы» — «3 т» (тоны) и «амы».
-        """(?<![\d.,])(\d{1,9}(?:[ \u00A0]\d{3})*)\s*(км/г|тыс|млрд|млн|руб|кап|км|см|мм|кг|мл|мг|м2|м²|га|шт|°C|%|₽|\$|€|м|л|г|т)\.?(?![\p{L}])""",
+        """(?<![\d.,])(\d{1,9}(?:[ \u00A0]\d{3})*)\s*(км/г|тыс|млрд|млн|руб|кап|км|см|мм|кг|мл|мг|м2|м²|га|шт|°с|%|₽|\$|€|м|л|г|т)\.?(?![\p{L}])""",
         RegexOption.IGNORE_CASE)
 }

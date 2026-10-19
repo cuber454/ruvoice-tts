@@ -37,7 +37,8 @@ object Splitter {
     // Одиночный \n перед строчной буквой (task 18 п.2) — мягкий перенос строки внутри
     // предложения (частый случай в PDF/книгах), не новый абзац — меняем на пробел.
     // Два и более \n подряд, а также \n перед заглавной — настоящий абзац, не трогаем.
-    private val softLineBreakRe = Regex("""(?<!\n)\n(?=[ \t]*[а-яё])""")
+    // «і», «ў» — белорусские строчные («…\nі пайшоў»), в русском тексте их нет.
+    private val softLineBreakRe = Regex("""(?<!\n)\n(?=[ \t]*[а-яёіў])""")
 
     fun paragraphs(text: String, rules: Rules = Rules()): List<String> {
         // CRLF → LF первым делом (review final-fix п.9): иначе hyphenBreakRe требует «-\n» вплотную

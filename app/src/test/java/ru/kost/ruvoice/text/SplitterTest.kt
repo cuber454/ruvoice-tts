@@ -31,6 +31,11 @@ class SplitterTest {
             Splitter.paragraphs("Он шёл\nдомой.\n\nНовый абзац."))
     }
 
+    @Test fun singleNewlineBeforeBelarusianLowercaseIsSpace() {
+        // перенос строки перед «і …», «ўсё» в белорусской книге — не абзац
+        assertEquals(listOf("Ён прыйшоў і сеў, ўсё."), Splitter.paragraphs("Ён прыйшоў\nі сеў,\nўсё."))
+    }
+
     @Test fun singleNewlineBeforeUppercaseIsParagraphBreak() {
         assertEquals(listOf("Он шёл", "Домой"), Splitter.paragraphs("Он шёл\nДомой"))
     }

@@ -101,7 +101,7 @@ object Pipeline {
              englishJoinMs: Int = English.JOIN_PUNCT_MS, layer: TextLayer = Layers.RU, allowed: String = d.allowed): List<Segment> {
         val src = text.toString().let { t ->
             if (!rules.on("letter_name")) t else loneLetter.matchEntire(t)?.let { m ->
-                m.groupValues[2][0].let { c -> if (m.groupValues[1].isEmpty() && m.groupValues[3].isEmpty()) Abbrev.loneLetterName(c) else Abbrev.letterName(c) }
+                m.groupValues[2][0].let { c -> layer.letterName(c, lone = m.groupValues[1].isEmpty() && m.groupValues[3].isEmpty()) }
                     ?.let { name ->
                         val pre = m.groupValues[1].lowercase()
                         val post = m.groupValues[3].lowercase().trim(' ', ',', '\t', '\n')
@@ -111,7 +111,7 @@ object Pipeline {
                     } }
                 // эхо ввода/удаления: «Удаление заглавная Р», «Р удалено» — буква с именем, иначе «ррр»;
                 // у экранного чтеца всегда, у книг и приложений — тумблером letter_echo_all
-                ?: (if (rules.on(Rules.LETTER_ECHO) || rules.on("letter_echo_all")) LetterEcho.rewrite(t) else null)
+                ?: (if (rules.on(Rules.LETTER_ECHO) || rules.on("letter_echo_all")) LetterEcho.rewrite(t, layer) else null)
                 // одиночный знак (клавиша «#», знак под курсором) — по имени, иначе фильтр оставит тишину
                 ?: t.trim().singleOrNull()?.let { SymbolNames.of(it) } ?: t
         }
@@ -482,15 +482,16 @@ class SileroTtsService : TextToSpeechService() {
     }
 
     /** Текст запроса с подставленными TtsSpan (SpanSay): TYPE_TEXT пунктуации TalkBack, телефоны,
-     * время, даты, деньги, «по цифрам» и прочие размеченные приложением куски. */
-    private fun spokenText(cs: CharSequence?): SpanText.Mapped {
+     * время, даты, деньги, «по цифрам» и прочие размеченные приложением куски. [lang] — язык голоса: русскими
+     * словами разворачиваем только для русского (SpanSay). */
+    private fun spokenText(cs: CharSequence?, lang: String): SpanText.Mapped {
         val t = cs?.toString().orEmpty()
         if (cs !is Spanned) return SpanText.mapped(t, emptyList())
         val spans = cs.getSpans(0, cs.length, TtsSpan::class.java).mapNotNull { sp ->
             val type = spanTypes[sp.type] ?: return@mapNotNull null
             val b = sp.args
             val args = spanArgs.entries.associate { (k, v) -> v to b.get(k)?.let { x -> spanValues[x.toString()] ?: x } }
-            runCatching { SpanSay.say(type, args) }.getOrNull()?.let { Triple(cs.getSpanStart(sp), cs.getSpanEnd(sp), it) }
+            runCatching { SpanSay.say(type, args, lang) }.getOrNull()?.let { Triple(cs.getSpanStart(sp), cs.getSpanEnd(sp), it) }
         }
         return SpanText.mapped(t, spans)
     }
@@ -544,13 +545,14 @@ class SileroTtsService : TextToSpeechService() {
             val rules = if (screenReader) baseRules.screenReader() else baseRules
             val noPauses = screenReader && baseRules.on("sr_pauses_off")
             // TtsSpan (пунктуация TalkBack «Все») — текстом; смещения rangeStart считаются по нему же
-            val spoken = spokenText(request.charSequenceText)
+            val lang = Speaker.lang(wantedName, packs())
+            val spoken = spokenText(request.charSequenceText, lang)
             val reqText = spoken.text
             // правило verbose_log: книжный запрос — в журнал как пришёл (невидимые знаки и ударения кодами), с голосом и темпом:
             // видно, что прислала читалка. Фразы экранного чтеца не пишем — там переписка
             if (!screenReader && rules.on("verbose_log")) note("от ${caller?.pkg ?: "?"}: голос $wantedName, темп %.2f, высота %.2f: «%s»".format(rate, pitch, visible(reqText)))
             // сбор имён («Проверка») идёт по русским словарям и морфологии: голосу другого языка не собираем
-            val auditNames = prefs.auditNames && !noDict && Speaker.lang(wantedName, packs()) == "ru"
+            val auditNames = prefs.auditNames && !noDict && lang == "ru"
             var written = 0L // сэмплов отдано читалке — точка отсчёта markerInFrames
             var audioMs = 0L // длительность отданного звука — для журнала
             // Чистое время синтеза: в него не входит ожидание плеера (audioAvailable блокирует, пока
@@ -742,7 +744,7 @@ class SileroTtsService : TextToSpeechService() {
             val prefetchNext = { synchronized(queued) {
                 val t = queued.firstOrNull { it.first == request.callerUid }?.second
                 if (prefetch == null && t != null) {
-                    val text = spokenText(t).text
+                    val text = spokenText(t, lang).text
                     val segs = planOf(text)
                     val p = Prefetch(request.callerUid, keyOf(text), segs.map { it.text })
                     for (s in segs.take(PREFETCH_SEGS)) {

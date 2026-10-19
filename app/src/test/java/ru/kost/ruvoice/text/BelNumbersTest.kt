@@ -97,4 +97,75 @@ class BelNumbersTest {
         assertEquals("два", BelNormalizer.cardinal(2))
         assertEquals("адзінаццаць", BelNormalizer.cardinal(11))
     }
+
+    private val cis = "абвгдеёжзійклмнопрстуўфхцчшыьэюя+-,.:;?—… "
+    private fun prep(t: String) = BelNormalizer.prepare(t, cis)
+
+    @Test
+    fun standaloneOnlyWholeWords() {
+        // второй проход не трогает развёрнутое единицами и слова, которые начинаются с «руб», «кап»
+        assertEquals("два рублі", prep("2 руб."))
+        assertEquals("капуста", prep("капуста"))
+        assertEquals("беларускі рубель", prep("беларускі рубель"))
+        assertEquals("пяць тысяч рублёў", prep("5 тыс. руб."))
+        assertEquals("цана ў рублёў", prep("цана ў руб."))
+    }
+
+    @Test
+    fun bigNumbersAndDigitGroups() {
+        // с миллиарда — по цифрам, без падения запроса
+        assertEquals("восем нуль два дзевяць адзін два тры чатыры пяць шэсць сем", prep("80291234567"))
+        assertEquals("адзін пяць нуль нуль нуль нуль нуль нуль нуль нуль", BelNormalizer.cardinal(1_500_000_000))
+        // через пробел склеиваются только группы по три
+        assertEquals("плюс трыста семдзесят пяць дваццаць дзевяць сто дваццаць тры сорак пяць шэсцьдзясят сем", prep("+375 29 123 45 67"))
+        assertEquals("адзін два тры", prep("1 2 3"))
+        assertEquals("чатыры тысячы дзвесце семдзесят шэсць адна тысяча дзвесце трыццаць чатыры", prep("4276 1234"))
+        assertEquals("адзін мільён", prep("1 000 000"))
+        assertEquals("тры мільёны дзвесце тысяч", prep("3 200 000"))
+        assertEquals("пяць мільёнаў", BelNormalizer.cardinal(5_000_000))
+    }
+
+    @Test
+    fun ordinalRoundThousandsAndHundreds() {
+        assertEquals("тысячны", BelNormalizer.ordinal(1000))
+        assertEquals("двухтысячны", BelNormalizer.ordinal(2000))
+        assertEquals("двухтысячнага", BelNormalizer.ordinal(2000, BelNormalizer.Form.GEN))
+        assertEquals("тысяча дзевяцісоты", BelNormalizer.ordinal(1900))
+        assertEquals("дзве тысячы соты", BelNormalizer.ordinal(2100))
+        assertEquals("тысяча дзевяцьсот дзевяноста восьмы", BelNormalizer.ordinal(1998))
+        assertEquals("тысяча дзевяцьсот дзевяноста восьмым", BelNormalizer.ordinal(1998, BelNormalizer.Form.LOC))
+        assertEquals("у двухтысячным годзе", prep("у 2000 годзе"))
+        assertEquals("тысяча дзевяцьсот дзевяноста восьмага года", prep("1998 года"))
+    }
+
+    @Test
+    fun yearsPluralIsCardinal() {
+        // «гадоў», «гадах» — после количественного
+        assertEquals("сто гадоў", prep("100 гадоў"))
+        assertEquals("у трохсотым годзе", prep("у 300 годзе"))
+    }
+
+    @Test
+    fun gramsAreNotYear() {
+        assertEquals("пяць грамаў солі", prep("5 г. солі"))
+        assertEquals("тысяча дзевяцьсот дзевяноста дзявяты год", prep("1999 г."))
+    }
+
+    @Test
+    fun celsiusLowercase() {
+        assertEquals("дваццаць градусаў цэльсія", prep("20 °C"))      // латинская «C»
+        assertEquals("пяць градусаў цэльсія", prep("5°С"))           // кириллическая «С»
+    }
+
+    @Test
+    fun fractionsAreNotDates() {
+        assertEquals("1.5 кг", BelNumbers.dates("1.5 кг"))
+        assertEquals("1/2 шклянкі", BelNumbers.dates("1/2 шклянкі"))
+        assertEquals("24/7", BelNumbers.dates("24/7"))
+        assertEquals("1.10.2", BelNumbers.dates("1.10.2"))
+        // дробь словами не читаем: числа по отдельности
+        assertEquals("адзін два шклянкі", prep("1/2 шклянкі"))
+        assertEquals("дванаццатага мая дзве тысячы дваццаць шостага года", BelNumbers.dates("12/05/2026"))
+        assertEquals("першага студзеня тысяча дзевяцьсот дзевяноста дзявятага года", BelNumbers.dates("01.01.99"))
+    }
 }

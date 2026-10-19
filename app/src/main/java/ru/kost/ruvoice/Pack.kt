@@ -31,11 +31,13 @@ class Pack(json: String, val dir: File) {
     val defaultVoice: String?
     /** Акцентор лежит в самом паке: тогда язык читается своим акцентором, а не штатным русским. */
     val accentor: Boolean get() = File(dir, Packs.ACCENTOR).isFile
-    /** Поправки ударений пака: слово → слово с «+»; пусто — пак их не принёс. */
+    /** Поправки ударений пака: слово → слово с «+»; пусто — пак их не принёс. Апостроф («аб'ява») убираем с обеих
+     * сторон: BelNormalizer снимает его до ударений, и слово с ним не нашлось бы. */
     val corrections: Map<String, String> by lazy {
         val f = File(dir, Packs.STRESS)
+        val apo = Regex("['’]")
         if (!f.isFile) emptyMap() else HashMap<String, String>().also { out ->
-            f.forEachLine { line -> DictLines.parseStress(line)?.let { (w, v) -> out[w.lowercase()] = v } }
+            f.forEachLine { line -> DictLines.parseStress(line)?.let { (w, v) -> out[w.lowercase().replace(apo, "")] = v.replace(apo, "") } }
         }
     }
     /** Место на диске: все файлы пака, с акцентором и поправками. */

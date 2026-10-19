@@ -11,6 +11,8 @@ interface QuestionLists {
     val whForms: Set<String>
     val leadingFillers: Set<String>
     val tagRe: Regex
+    /** Союз альтернативного вопроса («или», белорусские «ці», «або»); ищется в тексте в нижнем регистре. */
+    val altRe: Regex
 }
 
 /**
@@ -36,6 +38,10 @@ interface TextLayer {
     /** Ударения языка: акцентор пака и его поправки поверх словаря пользователя. null — русский конвейер [Stress]
      * (таблицы, омографы, «ё»). */
     fun stress(models: StressModels, userDict: Map<String, String>, corrections: Map<String, String>): ((String) -> String)? = null
+
+    /** Имя буквы, когда запрос — одна буква (правило letter_name, эхо ввода [LetterEcho]): [lone] — в запросе
+     * ничего, кроме буквы, [end] — имя последнее во фразе. null — буквы в таблице языка нет. */
+    fun letterName(c: Char, lone: Boolean = false, end: Boolean = true): String?
 }
 
 /** Русский слой — ровно то, что было до появления второго языка: [Normalizer] и данные stress.bin. */
@@ -44,6 +50,7 @@ object RuLayer : TextLayer {
     override val locale = Locale("ru", "RU")
     override fun prepare(text: String, allowed: String, rules: Rules): String = Normalizer.prepare(text, allowed, rules)
     override fun questions(d: SileroData): QuestionLists = d
+    override fun letterName(c: Char, lone: Boolean, end: Boolean) = if (lone) Abbrev.loneLetterName(c, end) else Abbrev.letterName(c)
 }
 
 /** Белорусский слой: [BelNormalizer] (числа словами, «!» → «.», апостроф, фильтр по символам пака). */
@@ -54,19 +61,36 @@ object BeLayer : TextLayer {
     override fun questions(d: SileroData): QuestionLists = BE_QUESTIONS
     override fun stress(models: StressModels, userDict: Map<String, String>, corrections: Map<String, String>) =
         BelStress(models, userDict, corrections)::apply
+    /** Белорусские имена букв, латиница — как в аббревиатурах [Latin]; «+» перед первой гласной, как у русских.
+     * Второе слово («нескладовае») ударение получает от акцентора. */
+    override fun letterName(c: Char, lone: Boolean, end: Boolean) = (BE_LETTERS[c.lowercaseChar()] ?: Latin.letterName(c))?.let { n ->
+        val i = n.indexOfFirst { it in "аеёіоуыэюя" }
+        if (i < 0) n else n.substring(0, i) + "+" + n.substring(i)
+    }
 }
+
+private val BE_LETTERS = mapOf(
+    'а' to "а", 'б' to "бэ", 'в' to "вэ", 'г' to "гэ", 'д' to "дэ", 'е' to "е", 'ё' to "ё", 'ж' to "жэ", 'з' to "зэ",
+    'і' to "і", 'й' to "і нескладовае", 'к' to "ка", 'л' to "эль", 'м' to "эм", 'н' to "эн", 'о' to "о", 'п' to "пэ",
+    'р' to "эр", 'с' to "эс", 'т' to "тэ", 'у' to "у", 'ў' to "у нескладовае", 'ф' to "эф", 'х' to "ха", 'ц' to "цэ",
+    'ч' to "чэ", 'ш' to "ша", 'ы' to "ы", 'ь' to "мяккі знак", 'э' to "э", 'ю' to "ю", 'я' to "я")
 
 /** Списки белорусского слоя: те же ключи, что у русского в silero_be.json, — перенесены сюда, потому что
  * вторая языка нет в stress.bin, и данные модели на него не распространяются. */
 private object BE_QUESTIONS : QuestionLists {
-    override val whForms = setOf(
+    // SentenceType сравнивает слова после своей нормализации (ё → е): списки — в том же виде, иначе «чыё» не находилось
+    private fun norm(s: Set<String>) = s.map { it.replace('ё', 'е') }.toSet()
+    override val whForms = norm(setOf(
         "хто", "што", "дзе", "калі", "чаму", "навошта", "як", "які", "якая", "якое", "якія", "чый", "чыя",
-        "чыё", "чыі", "колькі", "куды", "адкуль", "каторы", "чым", "каго", "чаго")
-    override val leadingFillers = setOf(
-        "ну", "вось", "а", "дык", "мо", "мабыць", "нават", "проста", "значыць", "так", "але", "ці")
+        "чыё", "чыі", "колькі", "куды", "адкуль", "каторы", "чым", "каго", "чаго"))
+    override val leadingFillers = norm(setOf(
+        "ну", "вось", "а", "дык", "мо", "мабыць", "нават", "проста", "значыць", "так", "але", "ці"))
+    // границы слова — lookaround, а не \b: в JDK 19+ \b только для ASCII и кириллицу не видит
     override val tagRe = Regex(listOf(
-        "\\bня\\s+прауда\\b", "\\bня\\s+прауд[аы]\\b", "\\bці\\s+не\\s+так\\b", "\\bтак\\s+жа\\b")
-        .joinToString("|") { "(?:$it)" }, RegexOption.IGNORE_CASE)
+        "ня\\s+праўда", "ня\\s+праўд[аы]", "ці\\s+не\\s+так", "так\\s+жа")
+        .joinToString("|") { "(?<![а-яёіў])(?:$it)(?![а-яёіў])" }, RegexOption.IGNORE_CASE)
+    // «або» и «ці» между словами — альтернатива («чай ці каву?»); «ці» в начале — частица общего вопроса («Ці прыйдзеш?»)
+    override val altRe = Regex("(?<![а-яёіў])або(?![а-яёіў])|(?<=\\S\\s)ці(?![а-яёіў])")
 }
 
 /** Таблица языков: язык берётся по коду пака, остальной код о языках не знает. */

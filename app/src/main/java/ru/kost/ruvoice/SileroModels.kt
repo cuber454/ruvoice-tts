@@ -135,21 +135,11 @@ class SileroModels(private val context: Context) : StressModels {
         if (homo == null) homo = LiteModuleLoader.loadModuleFromAsset(context.assets, "silero/homo.ptl")
     }
 
-    private fun softmaxRows(t: Tensor): Array<FloatArray> {
-        val rows = t.shape()[0].toInt(); val cols = t.shape()[1].toInt(); val d = t.dataAsFloatArray
-        return Array(rows) { r ->
-            val row = FloatArray(cols) { d[r * cols + it] }
-            val max = row.max(); val e = row.map { exp((it - max).toDouble()) }; val s = e.sum()
-            FloatArray(cols) { (e[it] / s).toFloat() }
-        }
-    }
-
     // под монитором: release() из другого потока не снимет модуль посреди forward (монитор реентерабельный)
     @Synchronized override fun accentor(words: List<String>): Pair<Array<FloatArray>, Array<FloatArray>> {
         // загруженный не меняем: его поставил ensureLoaded/ensureStress голоса; после release() — штатный русский
         if (acc == null) ensureAccentor(null)
-        val out = acc!!.forward(IValue.listFrom(*words.map { IValue.from(it) }.toTypedArray())).toTuple()
-        return Pair(softmaxRows(out[0].toTensor()), softmaxRows(out[1].toTensor()))
+        return accentorOut(acc!!.forward(IValue.listFrom(*words.map { IValue.from(it) }.toTypedArray())))
     }
 
     @Synchronized override fun homo(ids: List<LongArray>, starts: LongArray, ends: LongArray): FloatArray {
@@ -212,6 +202,24 @@ class SileroModels(private val context: Context) : StressModels {
     }
 
     companion object {
+        private fun softmaxRows(t: Tensor): Array<FloatArray> {
+            val rows = t.shape()[0].toInt(); val cols = t.shape()[1].toInt(); val d = t.dataAsFloatArray
+            return Array(rows) { r ->
+                val row = FloatArray(cols) { d[r * cols + it] }
+                val max = row.max(); val e = row.map { exp((it - max).toDouble()) }; val s = e.sum()
+                FloatArray(cols) { (e[it] / s).toFloat() }
+            }
+        }
+
+        /** Выход акцентора: (ударение, «ё») по словам. Акцентор пака может отдать один тензор или кортеж с None
+         * вторым (silero-stress bel/ukr: `(logits, None)`) — тогда «ё» пустые строки той же длины. */
+        fun accentorOut(out: IValue): Pair<Array<FloatArray>, Array<FloatArray>> {
+            val parts = if (out.isTuple) out.toTuple() else arrayOf(out)
+            val stress = softmaxRows(parts[0].toTensor())
+            val yo = parts.getOrNull(1)?.takeIf { it.isTensor }?.let { softmaxRows(it.toTensor()) } ?: Array(stress.size) { FloatArray(0) }
+            return stress to yo
+        }
+
         /** Время forward с запуска процесса: mel + head (TorchScript Lite) и бэкбон (ExecuTorch) — для Perf. */
         val liteMs = java.util.concurrent.atomic.AtomicLong()
         val backboneMs = java.util.concurrent.atomic.AtomicLong()

@@ -32,11 +32,13 @@ class BelStress(private val models: StressModels, private val userDict: Map<Stri
         "без", "праз", "пра", "а", "і", "не", "ні", "бы", "жа", "ці", "то", "як", "што", "хто",
         "дзе", "калі", "так", "ну", "вось", "што", "чым", "каб", "але", "або", "усе", "усё")
 
-    private val wordRe = Regex("[а-яёіў]+", RegexOption.IGNORE_CASE)
+    /** Слово с «+» (готовое ударение не режем на куски) и через дефис целиком: его ищем в словаре, потом по частям. */
+    private val wordRe = Regex("[а-яёіў+]+(?:-[а-яёіў+]+)*", RegexOption.IGNORE_CASE)
 
     /** Ставит «+» перед ударной гласной: `дзякуй` → `дз+якуй`. */
     fun apply(sentence: String): String {
-        val words = wordRe.findAll(sentence).map { it.value.lowercase() }
+        val words = wordRe.findAll(sentence).map { it.value.lowercase() }.filter { dict(it) == null }
+            .flatMap { it.split('-') }
             .filter { w -> '+' !in w && dict(w) == null && w !in noMark && w.count { c -> c in vowels } >= 2 }
             .distinct().toList()
 
@@ -61,12 +63,15 @@ class BelStress(private val models: StressModels, private val userDict: Map<Stri
 
         val out = StringBuilder(sentence.length + 8)
         var last = 0
+        fun cased(w: String, repl: String) = if (w[0].isUpperCase() && repl.isNotEmpty()) repl.replaceFirstChar { it.uppercaseChar() } else repl
+        fun one(w: String): String {
+            val lower = w.lowercase()
+            return cased(w, if ('+' in w) w else (dict(lower) ?: marked[lower] ?: w))
+        }
         for (m in wordRe.findAll(sentence)) {
             out.appendRange(sentence, last, m.range.first)
             val w = m.value
-            val lower = w.lowercase()
-            val repl = if ('+' in w) w else (dict(lower) ?: marked[lower] ?: w)
-            out.append(if (w[0].isUpperCase() && repl.isNotEmpty()) repl.replaceFirstChar { it.uppercaseChar() } else repl)
+            out.append(dict(w.lowercase())?.let { cased(w, it) } ?: w.split('-').joinToString("-", transform = ::one))
             last = m.range.last + 1
         }
         out.appendRange(sentence, last, sentence.length)

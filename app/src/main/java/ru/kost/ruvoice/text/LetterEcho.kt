@@ -50,8 +50,9 @@ object LetterEcho {
 
     private fun norm(w: String) = w.lowercase().replace('ё', 'е')
 
-    /** Запрос → текст с именем буквы или знака; null — не эхо ввода, читать как есть. */
-    fun rewrite(text: String): String? {
+    /** Запрос → текст с именем буквы или знака; null — не эхо ввода, читать как есть. Имя буквы — на языке
+     * голоса [layer]: белорусскому голосу русское «+ээр» не годится. */
+    fun rewrite(text: String, layer: TextLayer = Layers.RU): String? {
         val toks = ArrayList<Tok>()
         for (raw in text.split(Regex("\\s+")).filter { it.isNotEmpty() }) {
             val q = raw.trim { it in QUOTES }
@@ -75,7 +76,7 @@ object LetterEcho {
         val name = when {
             subjects.all { it is Tok.Letter && it.c.equals((subjects[0] as Tok.Letter).c, ignoreCase = true) } ->
                 // имя как у голой буквы («в+э.», «— +ы» — иначе «вы», «пы»); точку перед следующей частью заменяет запятая
-                Abbrev.loneLetterName((subjects[0] as Tok.Letter).c, end = tail.isEmpty())
+                layer.letterName((subjects[0] as Tok.Letter).c, lone = true, end = tail.isEmpty())
             subjects.size == 1 && subjects[0] is Tok.Symbol -> (subjects[0] as Tok.Symbol).c.let { PUNCT_NAMES[it] ?: SymbolNames.of(it) }
             else -> null
         } ?: return null

@@ -5,12 +5,10 @@ import ru.kost.ruvoice.SileroData
 object SentenceType {
     private val quoteOpen = setOf('"', '«', '“', '„')
     private val quoteClose = setOf('"', '»', '”', '’')
-    private val wordRe = Regex("[а-яёa-z]+", RegexOption.IGNORE_CASE)
+    // «і», «ў» — белорусские («калі», «колькі»), в русском тексте их нет
+    private val wordRe = Regex("[а-яёіўa-z]+", RegexOption.IGNORE_CASE)
     private val sentSplit = Regex("(?<=[.!?])\\s+")
     private val wsRe = Regex("\\s+")
-    // \b в java.util.regex зависит от JDK (unicode-aware ≤18, ASCII-only 19+) — не полагаемся
-    // на него для кириллицы, используем явные lookaround по классу букв.
-    private val altRe = Regex("(?<![а-яё])или(?![а-яё])")
 
     private fun stripOuterQuotes(s0: String): String {
         var s = s0.trim()
@@ -44,7 +42,7 @@ object SentenceType {
             val qq = normalize(tail)
             if (q.tagRe.containsMatchIn(qq)) return "tag_q"
             if (hasWhPrefix(qq, q)) return "wh_q"
-            if (altRe.containsMatchIn(qq.lowercase())) return "alternative_q"
+            if (q.altRe.containsMatchIn(qq.lowercase())) return "alternative_q"
             return "general_q"
         }
         if (clean.endsWith("!")) return "exclam"

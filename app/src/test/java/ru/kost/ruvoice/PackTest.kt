@@ -62,6 +62,13 @@ class PackTest {
         assertEquals(1L + File(dir, Packs.STRESS).length(), p.size)
     }
 
+    @Test fun correctionsWithoutApostrophe() {
+        // BelNormalizer снимает апостроф до ударений: «аб'ява» в тексте приходит как «абява»
+        val dir = Files.createTempDirectory("packapo").toFile()
+        File(dir, Packs.STRESS).writeText("аб'ява аб'+ява\nсям’я сям’+я\n")
+        assertEquals(mapOf("абява" to "аб+ява", "сямя" to "сям+я"), Pack(packJson.toString(), dir).corrections)
+    }
+
     @Test fun formatsTwoAndThree() {
         // 3 — паки не на русском: 1.0.1 их отвергает, это приложение принимает оба
         assertEquals("cis_ru", Pack(JSONObject(packJson.toString()).put("format", 3).toString(), File(".")).id)

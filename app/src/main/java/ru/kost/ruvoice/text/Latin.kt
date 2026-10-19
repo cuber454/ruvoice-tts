@@ -98,6 +98,9 @@ object Latin {
         'v' to "вэ", 'w' to "дабл-ю", 'x' to "экс", 'y' to "уай", 'z' to "зэт",
     )
 
+    /** Имя одной латинской буквы — запрос из одной буквы ([BeLayer.letterName]). */
+    fun letterName(c: Char): String? = NAMES[c.lowercaseChar()]
+
     private const val VOWELS = "аеёіоуыэюя"
     private const val EN_VOWELS = "aeiou"
 

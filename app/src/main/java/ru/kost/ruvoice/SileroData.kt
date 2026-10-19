@@ -47,6 +47,9 @@ class SileroData(bin: StressBin.File) : QuestionLists {
     override val whForms: Set<String>
     override val leadingFillers: Set<String>
     override val tagRe: Regex
+    // \b в java.util.regex зависит от JDK (unicode-aware ≤18, ASCII-only 19+) — не полагаемся
+    // на него для кириллицы, используем явные lookaround по классу букв.
+    override val altRe = Regex("(?<![а-яё])или(?![а-яё])")
 
     init {
         val o = JSONObject(bin.head)

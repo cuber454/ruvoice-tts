@@ -106,43 +106,52 @@ object BelNormalizer {
         else -> "тысяч"
     }
 
+    /** Число по цифрам: «80291234567» → «восем нуль два…». */
+    private fun digits(raw: String) = raw.map { UNITS[it - '0'] }.joinToString(" ")
+
+    /** С миллиарда — по цифрам: разрядов дальше нет (телефон, номер карты), а under1000 на них падал. */
+    private const val BIG = 1_000_000_000L
+
     private fun count(n: Long, fem: Boolean): String {
         if (n < 0) return "мінус " + count(-n, fem)
         if (n == 0L) return UNITS[0]
+        if (n >= BIG) return digits(n.toString())
         val parts = ArrayList<String>()
         val millions = (n / 1_000_000).toInt()
         val thousands = ((n / 1000) % 1000).toInt()
         val rest = (n % 1000).toInt()
-        if (millions > 0) parts.add(under1000(millions) + " мільён")
+        if (millions > 0) parts.add(under1000(millions) + " " + BelNumbers.plural(millions.toLong(), "мільён", "мільёны", "мільёнаў"))
         if (thousands > 0) parts.add(under1000(thousands, fem = true) + " " + thousandWord(thousands))
         if (rest > 0) parts.add(under1000(rest, fem = fem))
         return parts.joinToString(" ")
     }
 
-    /** Порядковое по последнему компоненту: 2026 → «дзве тысячы дваццаць шосты». */
+    /** Порядковое по последнему компоненту: 2026 → «дзве тысячы дваццаць шосты», 1998 → «тысяча дзевяцьсот
+     * дзевяноста восьмы» (в годах без «адна»), 2000 → «двухтысячны». */
     fun ordinal(n: Long, form: Form = Form.NOM): String {
         if (n == 0L) return pick(ORD_NOM[0], ORD_GEN[0], ORD_LOC[0], form)
+        // порядковые от миллиона в тексте не встречаются (годы — до четырёх цифр): количественным, без падения
+        if (n >= 1_000_000) return cardinal(n)
         val head = StringBuilder()
         fun add(s: String) { if (s.isNotEmpty()) { if (head.isNotEmpty()) head.append(' '); head.append(s) } }
-        val millions = (n / 1_000_000).toInt()
-        val thousands = ((n / 1000) % 1000).toInt()
+        val thousands = (n / 1000).toInt()
         val rest = (n % 1000).toInt()
-        if (millions > 0) add(under1000(millions) + " мільён")
-        if (thousands > 0) {
-            val t = under1000(thousands, fem = true)
-            val word = when {
-                thousands % 10 == 1 && thousands % 100 != 11 -> "тысяча"
-                thousands % 10 in 2..4 && thousands % 100 !in 12..14 -> "тысячы"
-                else -> "тысяч"
-            }
-            add("$t $word")
-        }
         if (rest == 0) {
-            return (head.toString() + " " + pick("тысячны", "тысячнага", "тысячным", form)).trim()
+            // круглые тысячи — одним словом: 1000 → «тысячны», 2000 → «двухтысячны» (основа как у «двухсоты»)
+            // ponytail: от 10 тысяч основа не выводится, оставлено «дзесяць тысячны»; форма не проверена носителем
+            val stem = when (thousands) {
+                1 -> ""
+                in 2..9 -> HUNDREDS_ORD.getValue(thousands * 100).first.removeSuffix("соты")
+                else -> under1000(thousands, fem = true) + " "
+            }
+            return stem + pick("тысячны", "тысячнага", "тысячным", form)
         }
+        if (thousands == 1) add("тысяча")
+        else if (thousands > 0) add(under1000(thousands, fem = true) + " " + thousandWord(thousands))
         val h = rest / 100
         val r = rest % 100
-        if (h > 0) add(HUNDREDS[h])
+        // круглые сотни порядковым целиком: 1900 → «тысяча дзевяцісоты», а не «…дзевяцьсот дзевяцісоты»
+        if (h > 0 && r > 0) add(HUNDREDS[h])
         val tail = buildString {
             when {
                 r == 0 -> append(pickOrd(h * 100, form))
@@ -175,32 +184,51 @@ object BelNormalizer {
         Form.LOC -> loc
     }
 
-    private val YEAR_RE = Regex("(\\d{3,4})\\s*(год|года|годзе|гадах|гадоў)(?![а-яёіў])", RegexOption.IGNORE_CASE)
-    private val DIGIT_GROUP_RE = Regex("\\d[\\d\\s\\u00A0\\u202F]*\\d|\\d")
+    // «гадоў», «гадах» — после количественного («100 гадоў»), год порядковым только в единственном числе
+    private val YEAR_RE = Regex("(\\d{3,4})\\s*(год|года|годзе)(?![а-яёіў])", RegexOption.IGNORE_CASE)
+    /** Разряды тысяч через пробел — только группами по три («1 000 000») и без соседних групп: телефон
+     * «29 123 45 67», номер карты «4276 1234…» и «1 2 3» — отдельные числа. */
+    private val DIGIT_GROUP_RE = Regex("(?<!\\d[ \\u00A0\\u202F]?)\\d{1,3}(?:[ \\u00A0\\u202F]\\d{3})+(?![ \\u00A0\\u202F]?\\d)|\\d+")
 
-    /** Число словами: 0–999 999 999; с годом — порядковым и в нужном падеже. */
+    /** Число словами: до 999 999 999, длиннее — по цифрам; с годом — порядковым и в нужном падеже. */
     fun numberWords(text: String): String {
         var s = YEAR_RE.replace(text) { m ->
             val n = m.groupValues[1].toLongOrNull() ?: return@replace m.value
             val word = m.groupValues[2].lowercase()
             val form = when (word) {
                 "годзе" -> Form.LOC
-                "года", "гадоў" -> Form.GEN
+                "года" -> Form.GEN
                 else -> Form.NOM
             }
             ordinal(n, form) + " " + word
         }
         s = DIGIT_GROUP_RE.replace(s) { m ->
-            val raw = m.value.replace(Regex("[\\s\\u00A0\\u202F]"), "")
-            raw.toLongOrNull()?.let { cardinal(it) } ?: m.value
+            val raw = m.value.filter { it.isDigit() }
+            raw.toLongOrNull()?.let { cardinal(it) } ?: digits(raw)
         }
         return s
     }
 
+    /** Гласная со знаком ударения над ней (U+0301 пишет «Книга с ударениями», гравис U+0300 — словари): «+» перед ней. */
+    private val COMBINING_ACUTE_RE = Regex("([аеёіоуыэюяАЕЁІОУЫЭЮЯ])[\\u0301\\u0300]")
+    /** Мягкий перенос книг и невидимые соединители: выкидываем, иначе фильтр рвал слово пробелом. */
+    private val ZERO_WIDTH_RE = Regex("[\\u00AD\\u200B-\\u200D\\u2060\\uFEFF]")
+    /** «+» не перед гласной — не ударение: «+375» — «плюс». */
+    private val PLUS_NOT_STRESS_RE = Regex("\\+(?![аеёіоуыэюя])")
+    /** Градусы Цельсия латинской или кириллической «C» — к одной записи «°с» (кириллица). */
+    private val CELSIUS_RE = Regex("°\\s*[CcСс](?!\\p{L})")
+    private val COMMA_RUN_RE = Regex(",(?:\\s*,)+")
+    private val COMMA_EDGE_RE = Regex("^[\\s,]+|(?<=[:;.?…])\\s*,|\\s*,(?=\\s*(?:[.?…;:]|$))")
+    private val SPACE_BEFORE_PUNCT_RE = Regex("\\s+(?=[.,?…:;])")
+    private val WS_RE = Regex("\\s+")
+
     /** Итоговая подготовка: латиница, числа, знаки, фильтр по таблице символов модели. */
     fun prepare(text: String, allowed: String): String {
+        var s = COMBINING_ACUTE_RE.replace(text) { "+" + it.groupValues[1] }.replace(ZERO_WIDTH_RE, "")
+        // «°C» латиницей — до Latin, иначе она делает из «C» «к» и единица не находится
+        s = CELSIUS_RE.replace(s, "°с")
         // латиницы в таблице символов модели нет вовсе — «FilmBell» раньше просто выпадало
-        var s = Latin.translate(text).lowercase()
+        s = Latin.translate(s).lowercase()
         s = s.replace(Regex("[’'`´ʼ]"), "")           // апостроф в таблице символов отсутствует
         // даты и время — до единиц: у них внутри цифры со знаками (12.05.2026, 21:30)
         s = BelNumbers.dates(s)
@@ -211,15 +239,20 @@ object BelNormalizer {
         s = numberWords(s)
         s = s.replace('!', '.')                        // «!» модель не получает (служебный символ)
         s = s.replace(Regex("[«»„“”\"()\\[\\]{}<>]"), ", ")   // вставка — пауза, как в русском RuVoice
-        s = s.replace('—', '-')
+        // тире — то, что знает модель: у cis-пака только «—», а Splitter делает из « - » «–»; на «—» и пауза тире
+        s = s.replace('–', '—')
+        s = PLUS_NOT_STRESS_RE.replace(s, " плюс ")
         val sb = StringBuilder(s.length)
         for (c in s) {
             when {
                 c in allowed -> sb.append(c)
-                c == '\n' || c == '\t' || c.isWhitespace() -> sb.append(' ')
+                // надстрочный знак не над гласной — без следа, пробелом он рвал бы слово
+                Character.getType(c) == Character.NON_SPACING_MARK.toInt() -> {}
                 else -> sb.append(' ')
             }
         }
-        return sb.toString().replace(Regex("\\s+"), " ").trim()
+        // кавычки и скобки дали запятые: подряд — одна, в начале и рядом с точкой — не нужна
+        val out = COMMA_RUN_RE.replace(sb.toString().replace(WS_RE, " "), ",")
+        return SPACE_BEFORE_PUNCT_RE.replace(COMMA_EDGE_RE.replace(out, ""), "").replace(WS_RE, " ").trim()
     }
 }
