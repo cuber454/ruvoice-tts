@@ -3,6 +3,7 @@
 package ru.kost.ruvoice.text
 
 import ru.kost.ruvoice.SileroData
+import java.util.Locale
 
 /** Слова, по которым [SentenceType] узнаёт вопрос: у каждого языка свои. У штатной русской модели они лежат
  * в данных (stress.bin: wh_forms, leading_fillers, tag_patterns), у второй языка — здесь, в его слое. */
@@ -23,16 +24,24 @@ interface TextLayer {
     /** Код языка, как в `pack.json`: `ru`, `be`. */
     val code: String
 
+    /** Язык и страна голосов в TTS API: ISO-3 из неё система спрашивает язык и выбирает голос. */
+    val locale: Locale
+
     /** Текст запроса к модели: числа, сокращения, латиница, знаки — и фильтр по символам модели [allowed]. */
     fun prepare(text: String, allowed: String, rules: Rules): String
 
     /** Списки для классификации вопроса (см. [QuestionLists]). */
     fun questions(d: SileroData): QuestionLists
+
+    /** Ударения языка: акцентор пака и его поправки поверх словаря пользователя. null — русский конвейер [Stress]
+     * (таблицы, омографы, «ё»). */
+    fun stress(models: StressModels, userDict: Map<String, String>, corrections: Map<String, String>): ((String) -> String)? = null
 }
 
 /** Русский слой — ровно то, что было до появления второго языка: [Normalizer] и данные stress.bin. */
 object RuLayer : TextLayer {
     override val code = "ru"
+    override val locale = Locale("ru", "RU")
     override fun prepare(text: String, allowed: String, rules: Rules): String = Normalizer.prepare(text, allowed, rules)
     override fun questions(d: SileroData): QuestionLists = d
 }
@@ -40,8 +49,11 @@ object RuLayer : TextLayer {
 /** Белорусский слой: [BelNormalizer] (числа словами, «!» → «.», апостроф, фильтр по символам пака). */
 object BeLayer : TextLayer {
     override val code = "be"
+    override val locale = Locale("be", "BY")
     override fun prepare(text: String, allowed: String, rules: Rules): String = BelNormalizer.prepare(text, allowed)
     override fun questions(d: SileroData): QuestionLists = BE_QUESTIONS
+    override fun stress(models: StressModels, userDict: Map<String, String>, corrections: Map<String, String>) =
+        BelStress(models, userDict, corrections)::apply
 }
 
 /** Списки белорусского слоя: те же ключи, что у русского в silero_be.json, — перенесены сюда, потому что
@@ -59,10 +71,17 @@ private object BE_QUESTIONS : QuestionLists {
 
 /** Таблица языков: язык берётся по коду пака, остальной код о языках не знает. */
 object Layers {
-    private val table: Map<String, TextLayer> = listOf(RuLayer, BeLayer).associateBy { it.code }
+    private val all = listOf(RuLayer, BeLayer)
+    private val table: Map<String, TextLayer> = all.associateBy { it.code }
 
     /** Русский — умолчание: так читаются паки без поля `lang` и встроенная модель. */
     val RU: TextLayer get() = RuLayer
 
     fun of(code: String?): TextLayer = table[code?.lowercase()] ?: RuLayer
+
+    /** Есть ли слой для кода пака: пак на языке, которого приложение не знает, не ставится. */
+    fun has(code: String) = code in table
+
+    /** Слой по языку из TTS API (ISO-3: «rus», «bel»); null — такого языка нет. */
+    fun ofIso3(lang: String?): TextLayer? = all.firstOrNull { it.locale.isO3Language == lang }
 }

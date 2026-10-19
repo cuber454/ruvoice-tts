@@ -38,16 +38,19 @@ class Stress(private val d: SileroData, private val models: StressModels, privat
     private val nonCyr = Regex("[^А-Яа-яёЁ]")
     private val wordRe = Regex("[а-яё+]+", RegexOption.IGNORE_CASE)
 
-    /** Белорусский конвейер: акцентор пака и его поправки поверх словаря пользователя. null — язык русский. */
-    private val bel: BelStress? by lazy { if (layer.code == BeLayer.code) BelStress(models, userDict, corrections) else null }
+    /** Ударения языка слоя (у белорусского — акцентор пака и его поправки); null — русский конвейер ниже. */
+    private val own = layer.stress(models, userDict, corrections)
 
     /** source — текст сегмента до нормализации: нормализатор опускает регистр, а правилу «самого + Имя» нужна заглавная
      * следующего слова. По умолчанию — сам sentence (тесты, аудит). */
     /** «Разбор»: не null — сюда пишется текст после каждого прохода и вероятности акцентора по словам. */
     var trace: MutableList<String>? = null
 
-    fun apply(sentence: String, source: String = sentence): String =
-        bel?.apply(sentence) ?: ruApply(sentence, source)
+    fun apply(sentence: String, source: String = sentence): String {
+        val own = own ?: return ruApply(sentence, source)
+        trace?.add("input: $sentence")
+        return own(sentence).also { trace?.add("${layer.code}: $it") }
+    }
 
     private fun ruApply(sentence: String, source: String): String {
         var s = sentence

@@ -1,5 +1,7 @@
 package ru.kost.ruvoice
 
+import ru.kost.ruvoice.text.Layers
+
 /** Голос по имени из Prefs или от читалки: штатный («xenia») или из пака («cis_ru/ru_alexandr»).
  * В сервисе класс android.speech.tts.Voice, поэтому не Voice. */
 class Speaker(val name: String, val pack: Pack?, val id: Int, val sym: Symbols, val types: Boolean,
@@ -57,20 +59,34 @@ class Speaker(val name: String, val pack: Pack?, val id: Int, val sym: Symbols, 
 
         /** Имя для TTS API читалок: «xenia-ru», «marat-ru-cis», «larisa-be-cis». Без «/» и «_» (AlReaderX такие
          * не опознаёт), код языка — из пака один раз: голос, язык, пак; в lite «ru/xenia» — «xenia-ru», как в full.
-         * Язык берём по паку: необязательный [packs] нужен, чтобы понять «cis_be» — это be; без него язык русский. */
-        fun ttsName(name: String, packs: List<Pack> = emptyList()): String {
+         * Из частей имени убираем только свой язык — его код и ISO-3 («bel_larisa» в «cis_be»). */
+        fun ttsName(name: String, packs: List<Pack>): String {
             val (pack, speaker) = name.split('/').let { if (it.size == 2) it else listOf("", it[0]) }
-            val lang = packs.firstOrNull { it.id == pack }?.lang ?: "ru"
-            fun parts(s: String) = s.split('_').filter { it.isNotEmpty() && it != "ru" && it != "be" && it != "bel" }
-            return (parts(speaker) + lang + parts(pack)).joinToString("-")
+            val layer = Layers.of(packs.firstOrNull { it.id == pack }?.lang)
+            val own = setOf(layer.code, layer.locale.isO3Language)
+            fun parts(s: String) = s.split('_').filter { it.isNotEmpty() && it !in own }
+            return (parts(speaker) + layer.code + parts(pack)).joinToString("-")
         }
         /** Язык голоса по имени: у голоса пака — язык пака, остальное (штатная модель) — русский. */
         fun lang(name: String, packs: List<Pack>): String =
             name.indexOf('/').takeIf { it > 0 }?.let { i -> packs.firstOrNull { it.id == name.substring(0, i) }?.lang } ?: "ru"
         /** Обратно из [ttsName]; имя в старой форме «ru-ru-cis_ru/ru_marat» (до 0.15) — тоже. */
         fun fromTtsName(tts: String?, d: SileroData, packs: List<Pack>): String? = fromTtsName(tts, names(d, packs), packs)
-        fun fromTtsName(tts: String?, names: List<String>, packs: List<Pack> = emptyList()): String? =
+        fun fromTtsName(tts: String?, names: List<String>, packs: List<Pack>): String? =
             tts?.let { t -> names.firstOrNull { ttsName(it, packs) == t } ?: t.removePrefix("ru-ru-") }
+
+        /** Голос для языка [lang] (код пака: ru, be) в ответ системе: она кладёт его в KEY_PARAM_VOICE_NAME каждого
+         * запроса клиента. Язык выбранного голоса [current] или системы [systemLang] — сам выбранный голос, иначе
+         * TalkBack и читалки читали бы не им. Другой язык — голос этого языка: по умолчанию его пака (поле default,
+         * у штатных — [DEFAULT]), с родным префиксом ISO-3 («bel_»), первый; нет таких — выбранный. */
+        fun defaultFor(lang: String, current: String, systemLang: String?, names: List<String>, packs: List<Pack>): String {
+            if (lang == lang(current, packs) || lang == systemLang) return current
+            val own = names.filter { lang(it, packs) == lang }
+            val prefix = Layers.of(lang).locale.isO3Language + "_"
+            val defaults = packs.mapNotNull { p -> p.defaultVoice?.let { packName(p, it) } } + DEFAULT + "$RU_PACK/$DEFAULT"
+            return defaults.firstOrNull { it in own } ?: own.firstOrNull { it.substringAfter('/').startsWith(prefix) }
+                ?: own.firstOrNull() ?: current
+        }
 
         /** Подпись в списке: «ru_alexandr (cis_ru)», штатные как есть. */
         fun label(name: String): String = name.indexOf('/').let { i -> if (i < 0) name else "${name.substring(i + 1)} (${name.substring(0, i)})" }

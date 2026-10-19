@@ -20,13 +20,57 @@ class SpeakerTest {
     /// тот же пак, но белорусский: язык пака решает, какой у голоса слой и как он называется в TTS API
     private val belPack = Pack(JSONObject(File(TestData.root(), "app/src/test/resources/golden_pack.json").readText())
         .getJSONObject("pack").put("id", "cis_be").put("lang", "be").toString(), File("."))
+    /** cis_be с настоящими именами родных голосов и парой чужих; [default] — поле default пака. */
+    private fun cisBe(default: String? = null) = Pack(JSONObject(File(TestData.root(), "app/src/test/resources/golden_pack.json").readText())
+        .getJSONObject("pack").put("id", "cis_be").put("lang", "be").put("format", 3).put("default", default ?: "")
+        .put("speakers", JSONObject(listOf("aze_gamat", "bel_anatoliy", "bel_dmitriy", "bel_larisa", "ukr_igor").withIndex().associate { it.value to it.index }))
+        .toString(), File("."))
 
     @Test fun ttsNamesCarryPackLanguage() {
         assertEquals("marat-ru-cis", Speaker.ttsName("cis_ru/ru_marat", listOf(pack)))
-        assertEquals("alexandr-be-cis", Speaker.ttsName("cis_be/ru_alexandr", listOf(belPack)))
-        // без списка паков язык неизвестен — прежнее «ru» в имени, как до появления второго языка
-        assertEquals("marat-ru-cis", Speaker.ttsName("cis_ru/ru_marat"))
+        // из имени убирается только свой язык: русский голос в белорусском паке свой «ru» сохраняет
+        assertEquals("ru-alexandr-be-cis", Speaker.ttsName("cis_be/ru_alexandr", listOf(belPack)))
+        // пака в списке нет — язык русский, как до появления второго языка
+        assertEquals("marat-ru-cis", Speaker.ttsName("cis_ru/ru_marat", emptyList()))
         assertEquals("xenia-ru", Speaker.ttsName("xenia", listOf(belPack)))
+    }
+
+    @Test fun ttsNamesUniqueAndReversible() {
+        // штатные, ru_voices (имена из пака 10.10.2026), cis_ru и cis_be: имена TTS не пересекаются и читаются обратно
+        val voices = JSONObject(ruJson.toString()).put("id", "ru_voices").put("speakers", JSONObject(listOf("aidar", "anyanov", "baya",
+            "boris", "chulsky", "dmitri", "eugene", "grinberg", "ilya", "ivan", "kazbek", "kseniya", "oleg", "olga", "pavel", "ponomarenko",
+            "ruslan", "solokha", "tovarisch", "wp_gk_tramrunner", "wp_muratov", "xenia").withIndex().associate { it.value to it.index }))
+        val packs = listOf(pack, Pack(voices.toString(), File(".")), cisBe())
+        val names = Speaker.names(d, packs)
+        val tts = names.map { Speaker.ttsName(it, packs) }
+        assertEquals(tts.groupBy { it }.filterValues { it.size > 1 }.keys.toString(), names.size, tts.toSet().size)
+        for ((n, t) in names.zip(tts)) assertEquals(n, Speaker.fromTtsName(t, names, packs))
+        assertEquals(listOf("larisa-be-cis", "anatoliy-be-cis", "dmitriy-be-cis"),
+            listOf("bel_larisa", "bel_anatoliy", "bel_dmitriy").map { Speaker.ttsName("cis_be/$it", packs) })
+        // русские имена — как до 1.1, байт в байт
+        assertEquals("xenia-ru", Speaker.ttsName("xenia", packs)); assertEquals("marat-ru-cis", Speaker.ttsName("cis_ru/ru_marat", packs))
+        assertEquals("wp-gk-tramrunner-ru-voices",Speaker.ttsName("ru_voices/wp_gk_tramrunner", packs))
+    }
+
+    @Test fun defaultVoiceForLanguage() {
+        val be = cisBe()
+        val packs = listOf(pack, be)
+        val names = Speaker.names(d, packs)
+        // язык выбранного голоса — он сам, а не первый русский по алфавиту (aidar)
+        assertEquals("kseniya", Speaker.defaultFor("ru", "kseniya", "ru", names, packs))
+        assertEquals("cis_ru/ru_marat", Speaker.defaultFor("ru", "cis_ru/ru_marat", "en", names, packs))
+        // язык системы — тоже выбранный: белорусский голос при русской системе читает и русский запрос
+        assertEquals("cis_be/bel_larisa", Speaker.defaultFor("ru", "cis_be/bel_larisa", "ru", names, packs))
+        // другой язык: голос с родным префиксом, а не первый по алфавиту (aze_gamat)
+        assertEquals("cis_be/bel_anatoliy", Speaker.defaultFor("be", "kseniya", "ru", names, packs))
+        // поле default пака главнее префикса
+        val withDefault = listOf(pack, cisBe("bel_larisa"))
+        assertEquals("cis_be/bel_larisa", Speaker.defaultFor("be", "kseniya", "ru", Speaker.names(d, withDefault), withDefault))
+        // русский по запросу при белорусской системе и голосе — штатный по умолчанию, не aidar
+        assertEquals("xenia", Speaker.defaultFor("ru", "cis_be/bel_larisa", "be", names, packs))
+        lite { assertEquals("ru/xenia", Speaker.defaultFor("ru", "cis_be/bel_larisa", "be", Speaker.names(d, listOf(ruPack, be)), listOf(ruPack, be))) }
+        // голосов языка нет — выбранный
+        assertEquals("kseniya", Speaker.defaultFor("be", "kseniya", "ru", Speaker.names(d, listOf(pack)), listOf(pack)))
     }
 
     @Test fun voiceLanguageComesFromPack() {
@@ -36,7 +80,7 @@ class SpeakerTest {
         assertEquals("ru", Speaker.lang("cis_ru/ru_marat", emptyList())) // пак удалён — умолчание
         assertEquals("be", Speaker.resolve("cis_be/ru_alexandr", d, listOf(belPack))!!.lang)
         assertEquals("ru", Speaker.resolve("cis_ru/ru_marat", d, listOf(pack))!!.lang)
-        assertNotNull(Speaker.fromTtsName("alexandr-be-cis", Speaker.names(d, listOf(belPack)), listOf(belPack)))
+        assertEquals("cis_be/ru_alexandr", Speaker.fromTtsName("ru-alexandr-be-cis", Speaker.names(d, listOf(belPack)), listOf(belPack)))
     }
 
     private fun lite(block: () -> Unit) { Speaker.builtin = false; try { block() } finally { Speaker.builtin = true } }
@@ -83,10 +127,10 @@ class SpeakerTest {
     }
 
     @Test fun ttsNamesHaveNoSlashesAndRuOnce() {
-        assertEquals("xenia-ru", Speaker.ttsName("xenia"))
-        assertEquals("xenia-ru", Speaker.ttsName("ru/xenia"))   // lite: то же имя, что в full
-        assertEquals("marat-ru-cis", Speaker.ttsName("cis_ru/ru_marat"))
         val packs = listOf(pack)
+        assertEquals("xenia-ru", Speaker.ttsName("xenia", packs))
+        assertEquals("xenia-ru", Speaker.ttsName("ru/xenia", listOf(ruPack)))   // lite: то же имя, что в full
+        assertEquals("marat-ru-cis", Speaker.ttsName("cis_ru/ru_marat", packs))
         assertEquals("cis_ru/ru_marat", Speaker.fromTtsName("marat-ru-cis", d, packs))
         assertEquals("cis_ru/ru_marat", Speaker.fromTtsName("ru-ru-cis_ru/ru_marat", d, packs))   // сохранённое читалкой до 0.15
         assertEquals("xenia", Speaker.fromTtsName("xenia-ru", d, packs))

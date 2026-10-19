@@ -18,6 +18,17 @@ class LayersTest {
         assertSame(RuLayer, Layers.of(null))           // пак без lang — русский
         assertSame(RuLayer, Layers.of("uk"))           // язык, которого в таблице пока нет
         assertSame(RuLayer, Layers.RU)
+        assertTrue(Layers.has("be")); assertTrue(!Layers.has("uk"))
+    }
+
+    @Test fun localesForTtsApi() {
+        // ISO-3 страны — из Locale: у Беларуси BLR (BEL — Бельгия)
+        assertEquals(listOf("rus", "RUS"), RuLayer.locale.let { listOf(it.isO3Language, it.isO3Country) })
+        assertEquals(listOf("bel", "BLR"), BeLayer.locale.let { listOf(it.isO3Language, it.isO3Country) })
+        assertSame(BeLayer, Layers.ofIso3("bel"))
+        assertSame(RuLayer, Layers.ofIso3("rus"))
+        assertEquals(null, Layers.ofIso3("ukr"))
+        assertEquals(null, Layers.ofIso3(null))
     }
 
     @Test fun belPrepare() {

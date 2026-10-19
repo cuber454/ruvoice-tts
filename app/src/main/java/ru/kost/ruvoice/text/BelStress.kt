@@ -16,13 +16,13 @@ package ru.kost.ruvoice.text
  *  - слова из словаря пользователя не трогаем — словарь главнее акцентора;
  *  - слова, где «+» уже стоит (из замены, словаря или от руки), не трогаем.
  *
- * [corrections] — поправки из самого пака (stress.txt): слово → слово с «+». Их десятки тысяч, поэтому
- * сливаем со словарём пользователя лениво и один раз; словарь пользователя пака главнее.
+ * [corrections] — поправки из самого пака (stress.txt): слово → слово с «+»; словарь пользователя главнее.
+ * Карты не сливаем: их десятки тысяч, а BelStress создаётся на каждый запрос (у TalkBack — на фразу).
  */
 class BelStress(private val models: StressModels, private val userDict: Map<String, String> = emptyMap(),
                 private val corrections: Map<String, String> = emptyMap()) {
 
-    private val dict: Map<String, String> by lazy { if (corrections.isEmpty()) userDict else corrections + userDict }
+    private fun dict(w: String) = userDict[w] ?: corrections[w]
 
     private val vowels = "аеёіоуыэюя"
 
@@ -37,7 +37,7 @@ class BelStress(private val models: StressModels, private val userDict: Map<Stri
     /** Ставит «+» перед ударной гласной: `дзякуй` → `дз+якуй`. */
     fun apply(sentence: String): String {
         val words = wordRe.findAll(sentence).map { it.value.lowercase() }
-            .filter { w -> '+' !in w && w !in dict && w !in noMark && w.count { c -> c in vowels } >= 2 }
+            .filter { w -> '+' !in w && dict(w) == null && w !in noMark && w.count { c -> c in vowels } >= 2 }
             .distinct().toList()
 
         val marked = HashMap<String, String>(words.size * 2)
@@ -57,7 +57,7 @@ class BelStress(private val models: StressModels, private val userDict: Map<Stri
                 marked[w] = w.substring(0, pos) + "+" + w.substring(pos)
             }
         }
-        if (marked.isEmpty() && dict.isEmpty()) return sentence
+        if (marked.isEmpty() && userDict.isEmpty() && corrections.isEmpty()) return sentence
 
         val out = StringBuilder(sentence.length + 8)
         var last = 0
@@ -65,7 +65,7 @@ class BelStress(private val models: StressModels, private val userDict: Map<Stri
             out.appendRange(sentence, last, m.range.first)
             val w = m.value
             val lower = w.lowercase()
-            val repl = if ('+' in w) w else (dict[lower] ?: marked[lower] ?: w)
+            val repl = if ('+' in w) w else (dict(lower) ?: marked[lower] ?: w)
             out.append(if (w[0].isUpperCase() && repl.isNotEmpty()) repl.replaceFirstChar { it.uppercaseChar() } else repl)
             last = m.range.last + 1
         }

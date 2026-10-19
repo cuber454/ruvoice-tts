@@ -163,10 +163,15 @@ class Prefs(private val context: Context) {
         }
     }
 
-    /** Слитые включённые списки ударений, из кэша процесса. */
-    fun userDict(): Map<String, String> = DictCache.stress(enabledDictFiles(Dicts.Kind.STRESS), disk = File(context.cacheDir, "userdict.bin"))
+    /** Списки для голоса на языке [lang]: системные ударения и замены русские, голосу другого языка — только свои. */
+    private fun langDictFiles(kind: Dicts.Kind, lang: String) = enabledDictFiles(kind).filter { lang == "ru" || !Dicts.isSystem(Dicts.name(it)) }
 
-    fun replacements(): Replacements = DictCache.replacements(enabledDictFiles(Dicts.Kind.REPLACE), stress = enabledDictFiles(Dicts.Kind.STRESS))
+    /** Слитые включённые списки ударений, из кэша процесса; кэш на диске у каждого языка свой. */
+    fun userDict(lang: String = "ru"): Map<String, String> = DictCache.stress(langDictFiles(Dicts.Kind.STRESS, lang),
+        disk = File(context.cacheDir, if (lang == "ru") "userdict.bin" else "userdict-$lang.bin"), lang = lang)
+
+    fun replacements(lang: String = "ru"): Replacements =
+        DictCache.replacements(langDictFiles(Dicts.Kind.REPLACE, lang), stress = langDictFiles(Dicts.Kind.STRESS, lang), lang = lang)
 
     /** Собирает JSON-файл экспорта настроек (текущие Prefs + все списки ударений и замен + профили). */
     fun exportJson(): String {

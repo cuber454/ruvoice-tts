@@ -37,6 +37,16 @@ class DictCacheTest {
         assertNotSame(r2, DictCache.replacements(emptyList()))
     }
 
+    @Test fun snapshotPerLanguage() {
+        // голоса двух языков вперемешку не пересобирают снимки друг друга
+        val ru = file("ru.txt", "кот = к+от\n"); val be = file("be.txt", "кот = к+от\n")
+        val r1 = DictCache.replacements(listOf(ru)); val b1 = DictCache.replacements(listOf(be), lang = "be")
+        assertSame(r1, DictCache.replacements(listOf(ru)))
+        assertSame(b1, DictCache.replacements(listOf(be), lang = "be"))
+        val s1 = DictCache.stress(listOf(ru)); DictCache.stress(listOf(be), lang = "be")
+        assertSame(s1, DictCache.stress(listOf(ru)))
+    }
+
     @Test fun warmReportsProgressAndDone() {
         val a = file("a.txt", (1..5000).joinToString("\n") { "слово$it = сл+ово$it" })
         val seen = ArrayList<Int>()

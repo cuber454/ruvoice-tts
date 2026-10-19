@@ -23,6 +23,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.ConfigurationCompat
 import androidx.core.os.LocaleListCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -305,9 +306,13 @@ class SettingsActivity : AppCompatActivity() {
         busyButton = button
         busyRestore = showStop(button)
         tts?.shutdown()
+        // голос — явно по имени выбранного: по языку система дала бы голос по умолчанию для языка, а образец — выбранным
+        val packs = Packs.installed(filesDir)
+        val d = SileroModels.data(ctx)
+        val voice = Speaker.ttsName((Speaker.resolve(prefs.voice, d, packs) ?: Speaker.default(d, packs))?.name ?: Speaker.DEFAULT, packs)
         tts = TextToSpeech(ctx, { status ->
             if (status == TextToSpeech.SUCCESS) {
-                tts?.language = Locale("ru", "RU")
+                tts?.let { t -> t.voices?.firstOrNull { it.name == voice }?.let { t.setVoice(it) } }
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {}
                     override fun onDone(utteranceId: String?) { button.post { release(button) } }
@@ -359,12 +364,13 @@ class SettingsActivity : AppCompatActivity() {
                 val rules = prefs.rules()
                 // те же акцентор и BERT, что у сервиса (SileroModels.shared); если сервис их выгрузил, Stress догрузит
                 val models = SileroModels.shared(ctx)
-                val stress = Stress(d, models, prefs.userDict(), rules, layer = layer,
+                val lang = speaker?.lang ?: "ru"
+                val stress = Stress(d, models, prefs.userDict(lang), rules, layer = layer,
                     corrections = speaker?.pack?.corrections ?: emptyMap())
                 // «Разбор» — как «Прослушать»: запрос из самого приложения сервис читает по правилам книг
                 val enEngine = if (rules.on("en_proxy_books")) EnglishProxy.chosen(ctx, prefs.enEngine) else null
-                val segments = Pipeline.plan(text, d, prefs.sentencePauseMs, prefs.paragraphPauseMs, prefs.replacements(), rules,
-                    if (enEngine == null) 0 else prefs.enMinWords.coerceIn(English.MIN_WORDS, English.MAX_WORDS), layer = layer)
+                val segments = Pipeline.plan(text, d, prefs.sentencePauseMs, prefs.paragraphPauseMs, prefs.replacements(lang), rules,
+                    if (enEngine == null) 0 else prefs.enMinWords.coerceIn(English.MIN_WORDS, English.MAX_WORDS), layer = layer, allowed = allowed)
                 buildString {
                     // Пометки словами, не значками: «[¶]» и «→» TalkBack не произносит, «[речь]» — через скобки
                     for (seg in segments) {
@@ -377,9 +383,10 @@ class SettingsActivity : AppCompatActivity() {
                             if (seg.breakMs > 0) appendLine(getString(R.string.analyze_pause, seg.breakMs))
                             appendLine(); continue
                         }
-                        // монитор models — тот же, что у синтеза и выгрузки в сервисе: форварды не параллелим
+                        // монитор models — тот же, что у синтеза и выгрузки в сервисе: форварды не параллелим; акцентор —
+                        // голоса разбора (сервис мог оставить акцентор другого языка)
                         val trace = ArrayList<String>().also { if (rules.on("verbose_log")) stress.trace = it }
-                        val accented = synchronized(models) { Pipeline.accent(seg.text, d, stress, allowed, rules) }
+                        val accented = synchronized(models) { models.ensureStress(speaker?.pack); Pipeline.accent(seg.text, d, stress, allowed, rules) }
                         appendLine(getString(R.string.analyze_model, stress.forModel(stress.stretchShort(accented)).split(' ').joinToString(" ") { DictLines.accentDisplay(it) }))
                         // правило verbose_log — по проходам: какой поставил ударение, и вероятности акцентора по гласным слова
                         trace.forEach { appendLine(it) }
@@ -431,13 +438,14 @@ class SettingsActivity : AppCompatActivity() {
             val info = resources.getQuantityString(R.plurals.pack_info, p.speakers.size, p.speakers.size, (p.size / 1048576).toInt(), p.license)
             // язык пака виден, только если он не русский: остальных паков это не касается
             row.findViewById<TextView>(R.id.info).text = if (p.lang == "ru") info
-                else "$info, " + getString(R.string.pack_lang, if (p.lang == "be") getString(R.string.lang_be) else p.lang)
+                else "$info, " + getString(R.string.pack_lang, Layers.of(p.lang).locale.getDisplayLanguage(ConfigurationCompat.getLocales(resources.configuration)[0] ?: Locale.getDefault()))
             // TalkBack: у каждого пака своя «Удалить» — без имени их не различить
             row.findViewById<Button>(R.id.delete).contentDescription = getString(R.string.pack_delete_named, p.title)
             row.findViewById<Button>(R.id.delete).setOnClickListener {
                 MaterialAlertDialogBuilder(this).setTitle(R.string.pack_delete_title).setMessage(getString(R.string.pack_delete_confirm, p.title))
                     .setPositiveButton(R.string.pack_delete) { _, _ ->
                         Packs.delete(filesDir, p.id)
+                        releaseModels()
                         // голос удалённого пака — на штатный; save фрагмента после этого его не вернёт (окно пересоздаётся).
                         // Пак ru в full (после lite) — те же голоса встроены: «ru/aidar» → «aidar», не на xenia.
                         val same = Speaker.builtin && p.id == Speaker.RU_PACK
@@ -461,6 +469,7 @@ class SettingsActivity : AppCompatActivity() {
             val result = runCatching {
                 contentResolver.openInputStream(uri)?.use { Packs.install(it, filesDir) } ?: throw IllegalStateException(getString(R.string.err_open_file))
             }
+            if (result.isSuccess) releaseModels()
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 progress.dismiss()
@@ -468,6 +477,13 @@ class SettingsActivity : AppCompatActivity() {
                     .onFailure { showSnackbar(errorText(it)) }
             }
         }.start()
+    }
+
+    /** Пак поставлен заново или удалён: модули прежней версии (тройка, акцентор) не должны жить дальше. release()
+     * под монитором дождётся текущего forward сервиса — поэтому не на главном потоке; следующий запрос загрузит заново. */
+    private fun releaseModels() {
+        val ctx = applicationContext
+        Thread { SileroModels.shared(ctx).release() }.start()
     }
 
     /** Списки голосов в фрагментах — lazy от установленных паков: пересоздаём окно, как после импорта

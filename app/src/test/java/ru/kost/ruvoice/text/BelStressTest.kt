@@ -47,8 +47,18 @@ class BelStressTest {
     }
 
     @Test fun userDictWinsOverPackCorrections() {
-        val stress = Stress(d, Fake(arrayOf(floatArrayOf(0.1f, 0.9f))), mapOf("дзякуй" to "дз+якуй"), Rules(),
-            layer = BeLayer, corrections = mapOf("дзякуй" to "дзя+куй"))
-        assertEquals("дз+якуй", stress.apply("дзякуй"))
+        val m = Fake(arrayOf(floatArrayOf(0.1f, 0.9f)))
+        val stress = Stress(d, m, mapOf("дзякуй" to "дз+якуй"), Rules(),
+            layer = BeLayer, corrections = mapOf("дзякуй" to "дзя+куй", "сталы" to "+сталы"))
+        assertEquals("дз+якуй +сталы", stress.apply("дзякуй сталы"))
+        assertEquals(emptyList<String>(), m.asked)   // слова из словаря и поправок акцентору не идут
+    }
+
+    @Test fun traceForAnalyze() {
+        // «Разбор»: белорусский путь пишет вход и результат
+        val stress = Stress(d, Fake(arrayOf(floatArrayOf(0.1f, 0.9f))), emptyMap(), Rules(), layer = BeLayer)
+        stress.trace = ArrayList()
+        stress.apply("дзякуй")
+        assertEquals(listOf("input: дзякуй", "be: дзяк+уй"), stress.trace)
     }
 }

@@ -2,6 +2,7 @@ package ru.kost.ruvoice
 
 import android.util.Log
 import org.json.JSONObject
+import ru.kost.ruvoice.text.Layers
 import java.io.EOFException
 import java.io.File
 import java.io.IOException
@@ -26,6 +27,8 @@ class Pack(json: String, val dir: File) {
     val types: Boolean
     /** Язык текста пака: `ru` (умолчание — у старых паков поля нет), `be` и другие коды CIS-модели. */
     val lang: String
+    /** Голос пака по умолчанию (поле `default`): его система получает, когда просит язык пака. null — поля нет. */
+    val defaultVoice: String?
     /** Акцентор лежит в самом паке: тогда язык читается своим акцентором, а не штатным русским. */
     val accentor: Boolean get() = File(dir, Packs.ACCENTOR).isFile
     /** Поправки ударений пака: слово → слово с «+»; пусто — пак их не принёс. */
@@ -35,11 +38,12 @@ class Pack(json: String, val dir: File) {
             f.forEachLine { line -> DictLines.parseStress(line)?.let { (w, v) -> out[w.lowercase()] = v } }
         }
     }
-    val size: Long get() = Packs.MODEL_FILES.sumOf { File(dir, it).length() }
+    /** Место на диске: все файлы пака, с акцентором и поправками. */
+    val size: Long get() = dir.listFiles()?.sumOf { it.length() } ?: 0L
 
     init {
         val o = JSONObject(json)
-        if (o.optInt("format") != Packs.FORMAT) o.optString("format").let { throw UserError("Пак собран для другой версии приложения (формат $it)", R.string.err_pack_format, it) }
+        if (o.optInt("format") !in Packs.FORMATS) o.optString("format").let { throw UserError("Пак собран для другой версии приложения (формат $it)", R.string.err_pack_format, it) }
         id = o.getString("id")
         require(Packs.ID_RE.matches(id)) { "Недопустимый id пака: $id" }
         title = o.optString("title", id); license = o.optString("license", ""); source = o.optString("source", "")
@@ -48,12 +52,14 @@ class Pack(json: String, val dir: File) {
         if (speakers.isEmpty()) throw UserError("В паке нет голосов", R.string.err_pack_no_voices)
         types = o.optBoolean("types", false)
         lang = o.optString("lang", "ru").lowercase()
+        defaultVoice = o.optString("default").takeIf { it in speakers }
         bases = o.optJSONObject("bases")?.let { j -> j.keys().asSequence().associateWith { j.getString(it) } } ?: emptyMap()
     }
 }
 
 object Packs {
-    const val FORMAT = 2
+    /** 3 — пак не на русском (поле lang): приложения до него такой пак не примут и не станут читать его по-русски. */
+    val FORMATS = 2..3
     val MODEL_FILES = listOf("tts_mel.ptl", "backbone.pte", "head.ptl")
     /** Файлы языка в паке: нужны не всем, поэтому необязательные. */
     const val ACCENTOR = "accentor.ptl"
@@ -119,6 +125,9 @@ object Packs {
             val text = json ?: throw notAPack()
             if (MODEL_FILES.any { !File(tmp, it).isFile }) throw notAPack()
             val pack = try { Pack(text, tmp) } catch (e: IllegalArgumentException) { throw e } catch (e: Exception) { throw notAPack() }
+            // язык без своего слоя читался бы русским нормализатором, а без своего акцентора — русским акцентором
+            if (!Layers.has(pack.lang)) throw UserError("Язык пака «${pack.lang}» приложение не знает", R.string.err_pack_lang, pack.lang)
+            if (pack.lang != "ru" && !pack.accentor) throw UserError("В паке на языке «${pack.lang}» нет акцентора $ACCENTOR", R.string.err_pack_accentor, pack.lang)
             File(tmp, "pack.json").writeText(text)
             val dest = File(packs, pack.id)
             if (dest.exists()) dest.deleteRecursively()

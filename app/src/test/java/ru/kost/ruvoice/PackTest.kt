@@ -51,13 +51,44 @@ class PackTest {
         val plain = Pack(packJson.toString(), dir)
         assertFalse(plain.accentor)
         assertTrue(plain.corrections.isEmpty())
-        assertEquals(0L, plain.size)   // размер считают только файлы модели
+        assertEquals(0L, plain.size)
         // файлы языка появились — пак отдаёт акцентор и поправки ударений
         File(dir, Packs.ACCENTOR).writeText("x")
         File(dir, Packs.STRESS).writeText("дзякуй дзя+куй\n\n# комментарий\nсталы +сталы\nодно\n")
         val p = Pack(packJson.toString(), dir)
         assertTrue(p.accentor)
         assertEquals(mapOf("дзякуй" to "дзя+куй", "сталы" to "+сталы"), p.corrections)
+        // место на диске — со всеми файлами пака: акцентор весит мегабайты
+        assertEquals(1L + File(dir, Packs.STRESS).length(), p.size)
+    }
+
+    @Test fun formatsTwoAndThree() {
+        // 3 — паки не на русском: 1.0.1 их отвергает, это приложение принимает оба
+        assertEquals("cis_ru", Pack(JSONObject(packJson.toString()).put("format", 3).toString(), File(".")).id)
+        assertThrows(IllegalArgumentException::class.java) { Pack(JSONObject(packJson.toString()).put("format", 4).toString(), File(".")) }
+    }
+
+    @Test fun defaultVoiceOnlyIfInPack() {
+        assertNull(Pack(packJson.toString(), File(".")).defaultVoice)
+        assertEquals("ru_marat", Pack(JSONObject(packJson.toString()).put("default", "ru_marat").toString(), File(".")).defaultVoice)
+        assertNull(Pack(JSONObject(packJson.toString()).put("default", "nobody").toString(), File(".")).defaultVoice)
+    }
+
+    @Test fun rejectsUnknownLanguageAndForeignWithoutAccentor() {
+        val models = arrayOf("tts_mel.ptl", "backbone.pte", "head.ptl")
+        fun install(lang: String, vararg extra: String) = Packs.install(ByteArrayInputStream(zip(JSONObject(packJson.toString())
+            .put("id", "p_$lang").put("format", 3).put("lang", lang).toString(), *models, extras = extra.associateWith { byteArrayOf(1) })), filesDir)
+        // языка нет в Layers — читать его нечем
+        val unknown = assertThrows(UserError::class.java) { install("uk", Packs.ACCENTOR) }
+        assertEquals(R.string.err_pack_lang, unknown.res)
+        // не русский без своего акцентора — слова считались бы русским
+        assertEquals(R.string.err_pack_accentor, assertThrows(UserError::class.java) { install("be") }.res)
+        assertTrue(Packs.installed(filesDir).isEmpty())
+        assertTrue((File(filesDir, "packs").listFiles() ?: emptyArray()).none { it.name.startsWith(".tmp") })
+        assertEquals("be", install("be", Packs.ACCENTOR).lang)
+        // русскому акцентор не нужен
+        assertEquals("ru", install("ru").lang)
+        Packs.delete(filesDir, "p_be"); Packs.delete(filesDir, "p_ru")
     }
 
     @Test fun installCopiesLanguageFiles() {
@@ -75,7 +106,7 @@ class PackTest {
         assertFalse(File(filesDir, "packs/.tmp-old").exists()) // хвост убитого процесса убран
         assertEquals(listOf("cis_ru"), Packs.installed(filesDir).map { it.id })
         assertTrue(File(filesDir, "packs/cis_ru/head.ptl").isFile)
-        assertEquals(3L, Packs.installed(filesDir).single().size)
+        assertEquals(3L + File(filesDir, "packs/cis_ru/pack.json").length(), Packs.installed(filesDir).single().size)
         assertNotNull(Packs.find(filesDir, "cis_ru")); assertNull(Packs.find(filesDir, "nope"))
         Packs.delete(filesDir, "cis_ru")
         assertTrue(Packs.installed(filesDir).isEmpty()); assertFalse(File(filesDir, "packs/cis_ru").exists())
