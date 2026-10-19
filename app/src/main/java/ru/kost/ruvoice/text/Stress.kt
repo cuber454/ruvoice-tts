@@ -507,6 +507,11 @@ class Stress(private val d: SileroData, private val models: StressModels, privat
      * (10.10.2026; symb_durs тут не годится — делает из кадров тишину, «я» начинается с обрыва). */
     fun yaOnset(spoken: String) = if (yaStartRe.containsMatchIn(spoken)) "– $spoken" else spoken
     private val yaStartRe = Regex("^\\+я(?!\\p{L})", RegexOption.IGNORE_CASE)
+    /** Голоса kseniya и eugene, кусок начинается с двух согласных («Страх», «Спасибо», «Что», «Штора»): модель даёт
+     * sos 1 кадр и первой согласной 1–3, «с»/«ч» не слышно. С тире перед куском 4–5 кадров до согласной и 5–7 на неё,
+     * как у baya без тире. У xenia и baya тире добавляет паузу 150–280 мс, им не нужно (19.10.2026). */
+    fun clusterOnset(spoken: String) = if (clusterStartRe.containsMatchIn(spoken)) "– $spoken" else spoken
+    private val clusterStartRe = Regex("^[бвгджзйклмнпрстфхцчшщ]{2}", RegexOption.IGNORE_CASE)
 
     private fun tokenize(sentence: String): Triple<List<String>, List<String>, List<Boolean>> {
         val tokens = ArrayList<String>(); val inputs = ArrayList<String>(); val mask = ArrayList<Boolean>()

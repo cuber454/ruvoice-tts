@@ -655,7 +655,9 @@ class SileroTtsService : TextToSpeechService() {
                         val (accented, endDot) = stress.modelEnd(stress.apply(prepared, marks.text))
                         if (auditNames) audit.names(seg.text, accented, known)
                         val segVoice = if (seg.speech) quoteVoice ?: voice else voice
-                        val spoken = stress.stretchShort(accented).let { if (segVoice.base == "aidar") stress.yaOnset(it) else it }
+                        val spoken = stress.stretchShort(accented).let {
+                            when (segVoice.base) { "aidar" -> stress.yaOnset(it); "kseniya", "eugene" -> stress.clusterOnset(it); else -> it }
+                        }
                         val forModel = stress.forModel(spoken)
                         if (!screenReader && rules.on("verbose_log")) note("в модель: «${visible(forModel)}»")
                         val seq = sym.sequence(forModel)
