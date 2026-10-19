@@ -8,6 +8,7 @@ import android.content.pm.ServiceInfo
 import android.os.PowerManager
 import android.os.Build
 import android.media.AudioFormat
+import android.content.Context
 import android.content.Intent
 import android.content.res.Resources
 import android.os.Binder
@@ -28,6 +29,7 @@ import android.util.Log
 import ru.kost.ruvoice.audio.Pcm
 import ru.kost.ruvoice.audio.Tempo
 import ru.kost.ruvoice.text.*
+import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.os.ConfigurationCompat
@@ -446,8 +448,14 @@ class SileroTtsService : TextToSpeechService() {
     /** Язык системы, а не Locale.getDefault(): у приложения свой язык интерфейса, а на API 33+ и Resources.getSystem()
      * может отдать его — там спрашиваем LocaleManager. null — список пуст, правило «язык системы» не действует. */
     private fun systemLang(): String? =
-        if (Build.VERSION.SDK_INT >= 33) getSystemService(LocaleManager::class.java)?.systemLocales?.get(0)?.language
+        if (Build.VERSION.SDK_INT >= 33) Api33.systemLang(this)
         else ConfigurationCompat.getLocales(Resources.getSystem().configuration)[0]?.language
+
+    /** LocaleManager (API 33) — в отдельном классе: ссылка на него в самом сервисе мешала проверке байткода на API 26–32. */
+    @RequiresApi(33)
+    private object Api33 {
+        fun systemLang(c: Context): String? = c.getSystemService(LocaleManager::class.java)?.systemLocales?.get(0)?.language
+    }
 
     override fun onStop() { stopped = true; synchronized(queued) { forgetApp(currentUid) } }
 
@@ -736,6 +744,10 @@ class SileroTtsService : TextToSpeechService() {
                         Log.e(SileroModels.TAG, "синтез не удался: «${seg.text.take(60)}»", e); null
                     }
                 }
+                } catch (e: Exception) {
+                    // подготовка текста (слой, тип предложения, разметка) упала — пропускаем сегмент, а не весь запрос;
+                    // Error (OOM) не глушим
+                    Log.e(SileroModels.TAG, "подготовка не удалась: «${seg.text.take(60)}»", e); return null
                 } finally { acc.addAndGet(System.currentTimeMillis() - tSeg) }
             }
             // Сегмент N+1 считается, пока звук сегмента N уходит плееру: audioAvailable блокирует,

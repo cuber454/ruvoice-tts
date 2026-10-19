@@ -144,7 +144,9 @@ object Latin {
         return clean.toString()
     }
 
-    /** Все латинские вставки в тексте → белорусские буквы; остальное не трогаем. */
+    /** Все латинские вставки в тексте → белорусские буквы; остальное не трогаем. Вплотную к цифрам — через пробел, а одна
+     * буква — именем, как у русского «пять джи»: «5G» — «5 гэ», «S24» — «эс 24», «MP3» — «эм-пэ 3» (капс — по буквам и так);
+     * иначе число склеивалось с буквой, а «г», «м», «т» читались единицами («пяць грамаў»). */
     fun translate(text: String): String {
         val out = StringBuilder(text.length + 8)
         var i = 0
@@ -153,7 +155,11 @@ object Latin {
             if (!isLatin) { out.append(text[i]); i++; continue }
             var j = i
             while (j < text.length && text[j].code < 128 && text[j].isLetter()) j++
-            out.append(word(text.substring(i, j)))
+            val digitBefore = i > 0 && text[i - 1].isDigit()
+            val digitAfter = j < text.length && text[j].isDigit()
+            if (digitBefore) out.append(' ')
+            out.append(if ((digitBefore || digitAfter) && j - i == 1) NAMES.getValue(text[i].lowercaseChar()) else word(text.substring(i, j)))
+            if (digitAfter) out.append(' ')
             i = j
         }
         return out.toString()

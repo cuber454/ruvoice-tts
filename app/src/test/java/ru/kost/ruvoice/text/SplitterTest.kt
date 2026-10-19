@@ -78,6 +78,14 @@ class SplitterTest {
         assertEquals(listOf("Текст [прим. ред.] конец."), Splitter.sentences("Текст [прим. ред.] конец."))
     }
 
+    @Test fun belarusianStreetAbbrevKeepsSentence() {
+        // белорусское «вул.» (вуліца) — не конец предложения
+        assertEquals(listOf("Музей на вул. Леніна, 5 адкрыўся.", "Далей."), Splitter.sentences("Музей на вул. Леніна, 5 адкрыўся. Далей."))
+        // русскому тексту не мешает: формы «вул» в морфологии AOT нет, «вулкан.» — конец предложения
+        assertEquals(0, Morph.open(java.io.File(TestData.root(), "app/src/main/assets/morph.bin")).tags("вул"))
+        assertEquals(listOf("Там был вулкан.", "Он спал."), Splitter.sentences("Там был вулкан. Он спал."))
+    }
+
     @Test fun okIsNotAnAbbreviationStopWord() {
         // review t17 п.6 (Splitter.kt:10): «ок» — разговорное слово в диалогах, не сокращение.
         assertEquals(listOf("Хорошо, ок.", "Идём дальше."), Splitter.sentences("Хорошо, ок. Идём дальше."))

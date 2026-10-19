@@ -34,10 +34,13 @@ class LayersTest {
 
     @Test fun belPrepare() {
         // числа словами, латиница транслитом, фильтр по символам модели
-        assertEquals("дзве тысячы дваццаць шэсць", BeLayer.prepare("2026", "абвгдеёжзійклмнопрстуўфхцчшыьэюя+,. ", Rules()))
+        assertEquals("дзве тысячы дваццаць шэсць", BeLayer.prepare("2026", cis, Rules()))
         // «!» и апостроф в модель не идут (служебные символы cis-пака); апостроф — во всех написаниях
-        assertEquals("прывет.", BeLayer.prepare("Прыв'ет!", "абвгдеёжзійклмнопрстуўфхцчшыьэюя+,. ", Rules()))
-        for (a in listOf("'", "’", "`", "´", "ʼ", "‘")) assertEquals("абява", BeLayer.prepare("аб${a}ява", "абвгдеёжзійклмнопрстуўфхцчшыьэюя+,. ", Rules()))
+        assertEquals("прывет.", BeLayer.prepare("Прыв'ет!", cis, Rules()))
+        for (a in listOf("'", "’", "`", "´", "ʼ", "‘")) assertEquals("абява", BeLayer.prepare("аб${a}ява", cis, Rules()))
+        // «?!» — вопрос, как у русского cis («что?»), а не «?.»
+        assertEquals("што?", BeLayer.prepare("Што?!", cis, Rules()))
+        assertEquals("што?", BeLayer.prepare(Splitter.sentences("Што!?").single(), cis, Rules()))
     }
 
     @Test fun belQuestions() {
@@ -52,7 +55,7 @@ class LayersTest {
         assertEquals("st", SentenceType.classify("Дзе ты быў?", lists, Rules(setOf("intonation"))))
     }
 
-    private val cis = "абвгдеёжзійклмнопрстуўфхцчшыьэюя+-,.:;?—… "
+    private val cis = TestData.cisAllowed
 
     @Test fun belAccentMarksAndInvisibleChars() {
         // знак ударения над гласной («Книга с ударениями» пишет U+0301) — «+» перед ней, а не пробел посреди слова
@@ -84,6 +87,11 @@ class LayersTest {
         assertEquals("— так, — сказаў ён.", BeLayer.prepare("— «Так», — сказаў ён.", cis, Rules()))
         assertEquals("— ціха, так.", BeLayer.prepare("— (ціха) Так.", cis, Rules()))
         assertEquals("сказаў: так.", BeLayer.prepare("Сказаў: «так».", cis, Rules()))
+        // кавычки посреди фразы — без паузы, как у русского («газета сообщила»); скобки — запятая по pause_parens
+        assertEquals("газета звязда паведаміла.", BeLayer.prepare("Газета «Звязда» паведаміла.", cis, Rules()))
+        assertEquals("газета звязда паведаміла.", BeLayer.prepare("Газета \"Звязда\" паведаміла.", cis, Rules()))
+        assertEquals("газета сообщила.", RuLayer.prepare("«Газета» сообщила.", cis, Rules()))
+        assertEquals("кніга том два тут", BeLayer.prepare("Кніга (том 2) тут", cis, Rules(setOf("pause_parens"))))
     }
 
     @Test fun belQuestionWords() {

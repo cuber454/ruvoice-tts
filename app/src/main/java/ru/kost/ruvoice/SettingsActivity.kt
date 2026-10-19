@@ -307,9 +307,9 @@ class SettingsActivity : AppCompatActivity() {
         busyRestore = showStop(button)
         tts?.shutdown()
         // голос — явно по имени выбранного: по языку система дала бы голос по умолчанию для языка, а образец — выбранным
+        // имя — без SileroModels.data: разбор silero_ru.json на главном потоке не нужен
         val packs = Packs.installed(filesDir)
-        val d = SileroModels.data(ctx)
-        val voice = Speaker.ttsName((Speaker.resolve(prefs.voice, d, packs) ?: Speaker.default(d, packs))?.name ?: Speaker.DEFAULT, packs)
+        val voice = Speaker.ttsName(Speaker.currentName(prefs.voice, SileroModels.speakers(ctx), packs) ?: Speaker.DEFAULT, packs)
         tts = TextToSpeech(ctx, { status ->
             if (status == TextToSpeech.SUCCESS) {
                 tts?.let { t -> t.voices?.firstOrNull { it.name == voice }?.let { t.setVoice(it) } }

@@ -40,8 +40,9 @@ class Pack(json: String, val dir: File) {
      * Апостроф («аб'ява») убираем с обеих сторон: BelNormalizer снимает его до ударений, и слово с ним не нашлось бы. */
     val corrections: Map<String, String> by lazy {
         val f = File(dir, Packs.STRESS)
-        val apo = BelNormalizer.APOSTROPHE
+        // BelNormalizer — только когда поправки есть: русские паки на первой фразе его не инициализируют
         if (!f.isFile) emptyMap() else HashMap<String, String>().also { out ->
+            val apo = BelNormalizer.APOSTROPHE
             f.forEachLine { line -> DictLines.parseStress(line)?.let { (w, v) -> out[w.lowercase().replace(apo, "")] = v.replace(apo, "") } }
         }
     }

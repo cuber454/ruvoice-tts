@@ -62,7 +62,7 @@ object RuLayer : TextLayer {
 object BeLayer : TextLayer {
     override val code = "be"
     override val locale = Locale("be", "BY")
-    override fun prepare(text: String, allowed: String, rules: Rules): String = BelNormalizer.prepare(text, allowed)
+    override fun prepare(text: String, allowed: String, rules: Rules): String = BelNormalizer.prepare(text, allowed, rules)
     override fun questions(d: SileroData): QuestionLists = BE_QUESTIONS
     override fun stress(models: StressModels, userDict: Map<String, String>, corrections: Map<String, String>) =
         BelStress(models, userDict, corrections)::apply
