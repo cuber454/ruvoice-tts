@@ -17,6 +17,27 @@ class SpeakerTest {
             .put("speakers", JSONObject(listOf("aidar", "baya", "kseniya", "eugene", "xenia").associateWith { j.getJSONObject("speakers").getInt(it) }))
     }
     private val ruPack = Pack(ruJson.toString(), File("."))
+    /// тот же пак, но белорусский: язык пака решает, какой у голоса слой и как он называется в TTS API
+    private val belPack = Pack(JSONObject(File(TestData.root(), "app/src/test/resources/golden_pack.json").readText())
+        .getJSONObject("pack").put("id", "cis_be").put("lang", "be").toString(), File("."))
+
+    @Test fun ttsNamesCarryPackLanguage() {
+        assertEquals("marat-ru-cis", Speaker.ttsName("cis_ru/ru_marat", listOf(pack)))
+        assertEquals("alexandr-be-cis", Speaker.ttsName("cis_be/ru_alexandr", listOf(belPack)))
+        // без списка паков язык неизвестен — прежнее «ru» в имени, как до появления второго языка
+        assertEquals("marat-ru-cis", Speaker.ttsName("cis_ru/ru_marat"))
+        assertEquals("xenia-ru", Speaker.ttsName("xenia", listOf(belPack)))
+    }
+
+    @Test fun voiceLanguageComesFromPack() {
+        assertEquals("ru", Speaker.lang("cis_ru/ru_marat", listOf(pack)))
+        assertEquals("be", Speaker.lang("cis_be/ru_alexandr", listOf(belPack)))
+        assertEquals("ru", Speaker.lang("xenia", listOf(belPack)))       // встроенный голос — русский
+        assertEquals("ru", Speaker.lang("cis_ru/ru_marat", emptyList())) // пак удалён — умолчание
+        assertEquals("be", Speaker.resolve("cis_be/ru_alexandr", d, listOf(belPack))!!.lang)
+        assertEquals("ru", Speaker.resolve("cis_ru/ru_marat", d, listOf(pack))!!.lang)
+        assertNotNull(Speaker.fromTtsName("alexandr-be-cis", Speaker.names(d, listOf(belPack)), listOf(belPack)))
+    }
 
     private fun lite(block: () -> Unit) { Speaker.builtin = false; try { block() } finally { Speaker.builtin = true } }
 

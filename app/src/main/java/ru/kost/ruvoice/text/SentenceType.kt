@@ -22,17 +22,18 @@ object SentenceType {
     private fun normalize(s: String): String =
         stripOuterQuotes(s).replace("+", "").replace('ё', 'е').replace('Ё', 'Е').replace(wsRe, " ").trim()
 
-    private fun hasWhPrefix(text: String, d: SileroData): Boolean {
+    private fun hasWhPrefix(text: String, q: QuestionLists): Boolean {
         val content = mutableListOf<String>()
         for (w in wordRe.findAll(text.lowercase()).map { it.value }.take(8)) {
-            if (w in d.leadingFillers) continue
+            if (w in q.leadingFillers) continue
             content += w
             if (content.size >= 4) break
         }
-        return content.any { it in d.whForms }
+        return content.any { it in q.whForms }
     }
 
-    fun classifySentence(s0: String, d: SileroData): String {
+    /** [q] — списки языка: у русского данные модели (SileroData), у белорусского свой слой (Layers). */
+    fun classifySentence(s0: String, q: QuestionLists): String {
         val s = s0.trim()
         if (s.isEmpty()) return "st"
         val clean = stripOuterQuotes(s)
@@ -40,10 +41,10 @@ object SentenceType {
         var tail = clean
         if (tail.endsWith("?!") || tail.endsWith("?..") || tail.endsWith("?...")) tail = tail.trimEnd('.', '!')
         if (tail.endsWith("?")) {
-            val q = normalize(tail)
-            if (d.tagRe.containsMatchIn(q)) return "tag_q"
-            if (hasWhPrefix(q, d)) return "wh_q"
-            if (altRe.containsMatchIn(q.lowercase())) return "alternative_q"
+            val qq = normalize(tail)
+            if (q.tagRe.containsMatchIn(qq)) return "tag_q"
+            if (hasWhPrefix(qq, q)) return "wh_q"
+            if (altRe.containsMatchIn(qq.lowercase())) return "alternative_q"
             return "general_q"
         }
         if (clean.endsWith("!")) return "exclam"
@@ -57,8 +58,8 @@ object SentenceType {
      * это единственно верное поведение — вызывающая сторона (Splitter/Pipeline) уже передаёт
      * сюда одно предложение за раз.
      */
-    fun classify(text: String, d: SileroData, rules: Rules = Rules()): String =
-        if (rules.on("intonation")) classifySentence(text, d) else "st"
+    fun classify(text: String, q: QuestionLists, rules: Rules = Rules()): String =
+        if (rules.on("intonation")) classifySentence(text, q) else "st"
 
     /** type_ids по символам входа модели (sos + prepared + eos), как build_type_ids_inference. */
     fun typeIds(prepared: String, typeStr: String, seqLen: Int, d: SileroData): LongArray {

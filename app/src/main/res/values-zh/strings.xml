@@ -255,13 +255,15 @@
     <!-- 语音包 -->
     <string name="voice_packs">更多语音…</string>
     <string name="packs_title">更多语音</string>
-    <string name="packs_hint">语音包是一个 zip 文件，内含 Silero 模型及其语音（80 至 85 MB）。语音包中的语音会出现在“语音”标签页的列表中。使用其他模型的语音包（例如 cis_ru）没有疑问句和感叹句语调，也没有逻辑重音。\n\n语音包在单独的发布页“Паки голосов”（语音包）中：\nhttps://github.com/kost-t-human/ruvoice-tts/releases/tag/packs</string>
+    <string name="packs_hint">语音包是一个 zip 文件，内含 Silero 模型及其语音（80 至 85 MB）。语音包中的语音会出现在“语音”标签页的列表中。没有句类输入的语音包（cis_ru、cis_be）由程序自己抬高音调来处理疑问句和感叹句语调；这类语音包没有逻辑重音。\n\n语音包在单独的发布页“Паки голосов”（语音包）中：\nhttps://github.com/kost-t-human/ruvoice-tts/releases/tag/packs</string>
     <string name="packs_none">没有语音：此版本的应用未内置模型。请安装语音包 ruvoice-pack-ru.zip（标准语音，约 85 MB）或其他任意语音包。</string>
     <string name="packs_install">从文件安装…</string>
     <string name="packs_installing">正在安装语音包…</string>
     <string name="packs_installing_hint">正在将语音复制到手机存储，最多可能需要一分钟。窗口会自动关闭。</string>
     <string name="pack_installed">语音包已安装：%1$s</string>
     <string name="pack_delete">删除</string>
+    <string name="pack_lang">语言：%1$s</string>
+    <string name="lang_be">白俄罗斯语</string>
     <string name="pack_delete_named">删除“%s”</string>
     <string name="pack_delete_title">删除语音包？</string>
     <string name="pack_delete_confirm">删除语音包“%1$s”？模型文件将被清除；如果当前选中的是它的语音，语音选择会被重置。</string>

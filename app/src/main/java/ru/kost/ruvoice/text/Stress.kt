@@ -21,10 +21,13 @@ internal fun verbLike(t: String, morph: Morph?) = t.isNotEmpty() && (morph == nu
     !participleAny.matches(t) && !genVerb.matches(t) && t !in notVerb
 
 /** morph — таблица морфологии для согласования с прилагательным в gramPass; null — правило выключено. По умолчанию та же,
- * что у нормализатора (SileroModels.data() ставит её раз на процесс; в JVM-тестах без ассета — null). */
+ * что у нормализатора (SileroModels.data() ставит её раз на процесс; в JVM-тестах без ассета — null).
+ * layer — язык текста (по полю lang пака): у белорусского ударения ставит [BelStress] по акцентору пака и его
+ * поправкам [corrections]; русский конвейер (таблицы, омографы, «ё», акцентор) остаётся как был. */
 class Stress(private val d: SileroData, private val models: StressModels, private val userDict: Map<String, String> = emptyMap(),
              private val rules: Rules = Rules(), private val morph: Morph? = Normalizer.morph, private val yo: YoDict? = YoDict.shared,
-             private val hardE: HardE? = HardE.shared) {
+             private val hardE: HardE? = HardE.shared, val layer: TextLayer = Layers.RU,
+             private val corrections: Map<String, String> = emptyMap()) {
     private val vowels = "аоуыэиеяёю"
     private val tok = BertTokenizer(d)
     private val homoWordRe = Regex("(?=.*[а-яё])[а-яё+]+", RegexOption.IGNORE_CASE)
@@ -35,12 +38,18 @@ class Stress(private val d: SileroData, private val models: StressModels, privat
     private val nonCyr = Regex("[^А-Яа-яёЁ]")
     private val wordRe = Regex("[а-яё+]+", RegexOption.IGNORE_CASE)
 
+    /** Белорусский конвейер: акцентор пака и его поправки поверх словаря пользователя. null — язык русский. */
+    private val bel: BelStress? by lazy { if (layer.code == BeLayer.code) BelStress(models, userDict, corrections) else null }
+
     /** source — текст сегмента до нормализации: нормализатор опускает регистр, а правилу «самого + Имя» нужна заглавная
      * следующего слова. По умолчанию — сам sentence (тесты, аудит). */
     /** «Разбор»: не null — сюда пишется текст после каждого прохода и вероятности акцентора по словам. */
     var trace: MutableList<String>? = null
 
-    fun apply(sentence: String, source: String = sentence): String {
+    fun apply(sentence: String, source: String = sentence): String =
+        bel?.apply(sentence) ?: ruApply(sentence, source)
+
+    private fun ruApply(sentence: String, source: String): String {
         var s = sentence
         fun step(name: String, next: String) { trace?.add("$name: $next"); s = next }
         trace?.add("input: $sentence")

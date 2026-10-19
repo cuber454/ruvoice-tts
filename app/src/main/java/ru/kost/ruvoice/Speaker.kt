@@ -7,6 +7,8 @@ class Speaker(val name: String, val pack: Pack?, val id: Int, val sym: Symbols, 
     /** Штатный голос, от которого темп и интонация: у новых голосов — из bases пака (у встроенной модели — из
      * silero_ru.json), иначе сам голос. */
     val base: String get() = name.substringAfter('/').let { (pack?.bases ?: builtinBases)[it] ?: it }
+    /** Язык голоса — язык его пака (штатная модель и старые паки без поля lang — русские). */
+    val lang: String get() = pack?.lang ?: "ru"
     companion object {
         const val DEFAULT = "xenia"
         /** Пак штатной модели для сборки lite: голые имена («xenia» из старых prefs) ищем в нём. */
@@ -53,17 +55,22 @@ class Speaker(val name: String, val pack: Pack?, val id: Int, val sym: Symbols, 
         fun sameEngine(main: Speaker, d: SileroData, packs: List<Pack>): List<String> =
             main.pack?.let { p -> p.speakers.keys.sorted().map { packName(p, it) } } ?: d.speakers.keys.sorted()
 
-        /** Имя для TTS API читалок: «xenia-ru», «marat-ru-cis». Без «/» и «_» (AlReaderX такие не опознаёт),
-         * «ru» один раз: голос, язык, пак; в lite «ru/xenia» — «xenia-ru», как в full. */
-        fun ttsName(name: String): String {
+        /** Имя для TTS API читалок: «xenia-ru», «marat-ru-cis», «larisa-be-cis». Без «/» и «_» (AlReaderX такие
+         * не опознаёт), код языка — из пака один раз: голос, язык, пак; в lite «ru/xenia» — «xenia-ru», как в full.
+         * Язык берём по паку: необязательный [packs] нужен, чтобы понять «cis_be» — это be; без него язык русский. */
+        fun ttsName(name: String, packs: List<Pack> = emptyList()): String {
             val (pack, speaker) = name.split('/').let { if (it.size == 2) it else listOf("", it[0]) }
-            fun parts(s: String) = s.split('_').filter { it.isNotEmpty() && it != "ru" }
-            return (parts(speaker) + "ru" + parts(pack)).joinToString("-")
+            val lang = packs.firstOrNull { it.id == pack }?.lang ?: "ru"
+            fun parts(s: String) = s.split('_').filter { it.isNotEmpty() && it != "ru" && it != "be" && it != "bel" }
+            return (parts(speaker) + lang + parts(pack)).joinToString("-")
         }
+        /** Язык голоса по имени: у голоса пака — язык пака, остальное (штатная модель) — русский. */
+        fun lang(name: String, packs: List<Pack>): String =
+            name.indexOf('/').takeIf { it > 0 }?.let { i -> packs.firstOrNull { it.id == name.substring(0, i) }?.lang } ?: "ru"
         /** Обратно из [ttsName]; имя в старой форме «ru-ru-cis_ru/ru_marat» (до 0.15) — тоже. */
-        fun fromTtsName(tts: String?, d: SileroData, packs: List<Pack>): String? = fromTtsName(tts, names(d, packs))
-        fun fromTtsName(tts: String?, names: List<String>): String? =
-            tts?.let { t -> names.firstOrNull { ttsName(it) == t } ?: t.removePrefix("ru-ru-") }
+        fun fromTtsName(tts: String?, d: SileroData, packs: List<Pack>): String? = fromTtsName(tts, names(d, packs), packs)
+        fun fromTtsName(tts: String?, names: List<String>, packs: List<Pack> = emptyList()): String? =
+            tts?.let { t -> names.firstOrNull { ttsName(it, packs) == t } ?: t.removePrefix("ru-ru-") }
 
         /** Подпись в списке: «ru_alexandr (cis_ru)», штатные как есть. */
         fun label(name: String): String = name.indexOf('/').let { i -> if (i < 0) name else "${name.substring(i + 1)} (${name.substring(0, i)})" }

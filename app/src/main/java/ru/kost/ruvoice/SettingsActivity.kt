@@ -37,6 +37,7 @@ import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
 import java.util.Locale
 import ru.kost.ruvoice.text.English
+import ru.kost.ruvoice.text.Layers
 import ru.kost.ruvoice.text.Stress
 
 /**
@@ -352,15 +353,18 @@ class SettingsActivity : AppCompatActivity() {
                 val d = SileroModels.data(ctx)
                 val packs = Packs.installed(ctx.filesDir)
                 // фильтр символов — того движка, что озвучит: у cis-пака нет «!» и апострофа
-                val allowed = (Speaker.resolve(prefs.voice, d, packs) ?: Speaker.default(d, packs))?.sym?.allowed ?: d.sym.allowed
+                val speaker = Speaker.resolve(prefs.voice, d, packs) ?: Speaker.default(d, packs)
+                val allowed = speaker?.sym?.allowed ?: d.sym.allowed
+                val layer = Layers.of(speaker?.lang)
                 val rules = prefs.rules()
                 // те же акцентор и BERT, что у сервиса (SileroModels.shared); если сервис их выгрузил, Stress догрузит
                 val models = SileroModels.shared(ctx)
-                val stress = Stress(d, models, prefs.userDict(), rules)
+                val stress = Stress(d, models, prefs.userDict(), rules, layer = layer,
+                    corrections = speaker?.pack?.corrections ?: emptyMap())
                 // «Разбор» — как «Прослушать»: запрос из самого приложения сервис читает по правилам книг
                 val enEngine = if (rules.on("en_proxy_books")) EnglishProxy.chosen(ctx, prefs.enEngine) else null
                 val segments = Pipeline.plan(text, d, prefs.sentencePauseMs, prefs.paragraphPauseMs, prefs.replacements(), rules,
-                    if (enEngine == null) 0 else prefs.enMinWords.coerceIn(English.MIN_WORDS, English.MAX_WORDS))
+                    if (enEngine == null) 0 else prefs.enMinWords.coerceIn(English.MIN_WORDS, English.MAX_WORDS), layer = layer)
                 buildString {
                     // Пометки словами, не значками: «[¶]» и «→» TalkBack не произносит, «[речь]» — через скобки
                     for (seg in segments) {
@@ -424,7 +428,10 @@ class SettingsActivity : AppCompatActivity() {
         for (p in packs) {
             val row = layoutInflater.inflate(R.layout.item_pack, list, false)
             row.findViewById<TextView>(R.id.title).text = p.title
-            row.findViewById<TextView>(R.id.info).text = resources.getQuantityString(R.plurals.pack_info, p.speakers.size, p.speakers.size, (p.size / 1048576).toInt(), p.license)
+            val info = resources.getQuantityString(R.plurals.pack_info, p.speakers.size, p.speakers.size, (p.size / 1048576).toInt(), p.license)
+            // язык пака виден, только если он не русский: остальных паков это не касается
+            row.findViewById<TextView>(R.id.info).text = if (p.lang == "ru") info
+                else "$info, " + getString(R.string.pack_lang, if (p.lang == "be") getString(R.string.lang_be) else p.lang)
             // TalkBack: у каждого пака своя «Удалить» — без имени их не различить
             row.findViewById<Button>(R.id.delete).contentDescription = getString(R.string.pack_delete_named, p.title)
             row.findViewById<Button>(R.id.delete).setOnClickListener {

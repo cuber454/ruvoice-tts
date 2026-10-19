@@ -27,6 +27,7 @@ import android.widget.TextView
 import androidx.activity.result.ActivityResultCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import com.google.android.material.textfield.TextInputEditText
+import ru.kost.ruvoice.text.Layers
 import ru.kost.ruvoice.text.Rules
 import ru.kost.ruvoice.text.Stress
 import androidx.core.widget.doAfterTextChanged
@@ -174,7 +175,13 @@ class AuditFragment : PageFragment(R.layout.fragment_audit) {
                 val d = SileroModels.data(ctx)
                 val userDict = prefs.userDict()
                 val r = prefs.rules()
-                val stress = Stress(d, models, userDict, Rules(r.off + setOf("gram", "homo"), r.maxLen, r.focus))
+                // текстовый слой и акцентор — выбранного голоса: книгу проверяем тем, чем её будут читать
+                val packs = Packs.installed(ctx.filesDir)
+                val speaker = Speaker.resolve(prefs.voice, d, packs) ?: Speaker.default(d, packs)
+                val layer = Layers.of(speaker?.lang)
+                models.ensureStress(speaker?.pack)
+                val stress = Stress(d, models, userDict, Rules(r.off + setOf("gram", "homo"), r.maxLen, r.focus), layer = layer,
+                    corrections = speaker?.pack?.corrections ?: emptyMap())
                 val known = Audit.known(d, userDict)
                 var shown = -1
                 fun progress(pct: Int) { if (pct != shown) { shown = pct; activity?.runOnUiThread { live.show(pct, "$pct %") } } }

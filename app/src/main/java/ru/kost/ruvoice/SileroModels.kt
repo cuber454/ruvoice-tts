@@ -29,14 +29,19 @@ class SileroModels(private val context: Context) : StressModels {
     private var backbone: org.pytorch.executorch.Module? = null
     private var acc: Module? = null
     private var homo: Module? = null
+    /** Чей акцентор нужен загруженной тройке: null — штатный русский из assets, иначе папка пака. */
+    private var accDir: File? = null
+    /** Чей акцентор загружен на самом деле (может отличаться: аудит книги просит акцентор своего пака). */
+    private var accLoadedDir: String? = null
     /** Папка тройки mel/backbone/head: null — штатная из assets, иначе каталог пака. */
     private var packDir: File? = null
     /** id загруженного пака, null — штатная модель (или ничего не загружено). */
     @Volatile var loadedPack: String? = null; private set
-    val isLoaded get() = mel != null && head != null && backbone != null && acc != null && homo != null
+    val isLoaded get() = mel != null && head != null && backbone != null && acc != null
 
     /** Тройка синтеза — штатная (pack == null) или из папки пака — плюс акцентор и BERT. В памяти одна
-     * тройка: другой пак или переход на штатную выгружает прежнюю, акцентор/BERT живут до release(). */
+     * тройка: другой пак или переход на штатную выгружает прежнюю, акцентор/BERT живут до release().
+     * Акцентор ставим по паку: у пака со своим `accentor.ptl` — его, иначе штатный русский. */
     @Synchronized fun ensureLoaded(pack: Pack? = null) {
         val t = System.currentTimeMillis()
         try {
@@ -49,18 +54,28 @@ class SileroModels(private val context: Context) : StressModels {
                 loadedPack = pack?.id
                 SileroTtsService.note("модель ${pack?.id ?: "v5_5_ru"} загружена за ${System.currentTimeMillis() - t} мс")
             }
-            ensureStress()
+            accDir = pack?.takeIf { it.accentor }?.dir
+            ensureAccentor(accDir)
         } catch (e: Exception) {
             release()
             throw e
         }
     }
 
-    /** Акцентор и BERT — общие для штатной модели и паков; accentor()/homo() грузят только их,
-     * чтобы не трогать загруженную тройку синтеза. «Книга с ударениями» зовёт заранее, пока в окне «загрузка». */
-    @Synchronized fun ensureStress() {
-        if (acc == null) acc = LiteModuleLoader.loadModuleFromAsset(context.assets, "silero/accentor.ptl")
-        if (homo == null) homo = LiteModuleLoader.loadModuleFromAsset(context.assets, "silero/homo.ptl")
+    /** Акцентор языка загруженной тройки — без загрузки самой тройки, чтобы не трогать её; «Книга с ударениями»
+     * зовёт заранее, пока в окне «загрузка». [pack] — акцентор именно этого пака (аудит и разбор своей книги). */
+    @Synchronized fun ensureStress(pack: Pack? = null) {
+        ensureAccentor(if (pack == null) accDir else pack.takeIf { it.accentor }?.dir)
+    }
+
+    /** Акцентор [dir]: null — штатный русский из assets. Модуль один: акцентор другого языка заменяет прежний,
+     * иначе белорусская фраза считалась бы русским акцентором и наоборот. */
+    @Synchronized private fun ensureAccentor(dir: File?) {
+        if (acc != null && accLoadedDir == dir?.path) return
+        acc?.destroy(); acc = null
+        acc = if (dir == null) LiteModuleLoader.loadModuleFromAsset(context.assets, "silero/accentor.ptl")
+            else LiteModuleLoader.load(File(dir, Packs.ACCENTOR).path)
+        accLoadedDir = dir?.path
     }
 
     private fun loadLite(pack: Pack?, name: String): Module =
@@ -113,7 +128,15 @@ class SileroModels(private val context: Context) : StressModels {
 
     @Synchronized fun release() {
         releaseTts()
-        acc?.destroy(); homo?.destroy(); acc = null; homo = null
+        acc?.destroy(); homo?.destroy(); acc = null; homo = null; accDir = null; accLoadedDir = null
+    }
+
+    /** Акцентор уже загружен — не меняем: его мог поставить ensureStress(pack) для аудита или разбора своей книги. */
+    @Synchronized private fun ensureAccentorIfMissing() { if (acc == null) ensureAccentor(accDir) }
+
+    /** BERT-омографы — только русские (ассет штатной модели): грузим по первому обращению, белому слою он не нужен. */
+    @Synchronized private fun ensureHomo() {
+        if (homo == null) homo = LiteModuleLoader.loadModuleFromAsset(context.assets, "silero/homo.ptl")
     }
 
     private fun softmaxRows(t: Tensor): Array<FloatArray> {
@@ -126,13 +149,13 @@ class SileroModels(private val context: Context) : StressModels {
     }
 
     override fun accentor(words: List<String>): Pair<Array<FloatArray>, Array<FloatArray>> {
-        ensureStress()
+        ensureAccentorIfMissing()
         val out = acc!!.forward(IValue.listFrom(*words.map { IValue.from(it) }.toTypedArray())).toTuple()
         return Pair(softmaxRows(out[0].toTensor()), softmaxRows(out[1].toTensor()))
     }
 
     override fun homo(ids: List<LongArray>, starts: LongArray, ends: LongArray): FloatArray {
-        ensureStress()
+        ensureHomo()
         if (ids.isEmpty()) return FloatArray(0)
         val b = ids.size; val len = ids.maxOf { it.size }
         val flat = LongArray(b * len) { data.bertPad.toLong() }

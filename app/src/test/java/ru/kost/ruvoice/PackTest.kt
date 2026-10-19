@@ -14,11 +14,12 @@ class PackTest {
     private val packJson = JSONObject(File(TestData.root(), "app/src/test/resources/golden_pack.json").readText()).getJSONObject("pack")
     private val filesDir = Files.createTempDirectory("ruvoice").toFile()
 
-    private fun zip(json: String?, vararg models: String): ByteArray {
+    private fun zip(json: String?, vararg models: String, extras: Map<String, ByteArray> = emptyMap()): ByteArray {
         val bytes = ByteArrayOutputStream()
         ZipOutputStream(bytes).use { z ->
             if (json != null) { z.putNextEntry(ZipEntry("pack.json")); z.write(json.toByteArray()); z.closeEntry() }
             for (m in models) { z.putNextEntry(ZipEntry(m)); z.write(byteArrayOf(1)); z.closeEntry() }
+            for ((n, b) in extras) { z.putNextEntry(ZipEntry(n)); z.write(b); z.closeEntry() }
         }
         return bytes.toByteArray()
     }
@@ -34,6 +35,37 @@ class PackTest {
     @Test fun rejectsOtherFormat() {
         val e = assertThrows(IllegalArgumentException::class.java) { Pack(packJson.put("format", 1).toString(), File(".")) }
         assertTrue(e.message!!, e.message!!.contains("другой версии"))
+    }
+
+    @Test fun langDefaultsToRuAndComesFromJson() {
+        // пак без поля lang читается русским — старые паки не ломаются
+        assertEquals("ru", Pack(packJson.toString(), File(".")).lang)
+        assertEquals("be", Pack(JSONObject(packJson.toString()).put("lang", "be").toString(), File(".")).lang)
+        // код языка в нижнем регистре: pack.json пишут люди и скрипты
+        assertEquals("be", Pack(JSONObject(packJson.toString()).put("lang", "BE").toString(), File(".")).lang)
+    }
+
+    @Test fun accentorAndCorrectionsAreOptional() {
+        val dir = Files.createTempDirectory("packlang").toFile()
+        // пак без файлов языка: ни акцентора, ни поправок
+        val plain = Pack(packJson.toString(), dir)
+        assertFalse(plain.accentor)
+        assertTrue(plain.corrections.isEmpty())
+        assertEquals(0L, plain.size)   // размер считают только файлы модели
+        // файлы языка появились — пак отдаёт акцентор и поправки ударений
+        File(dir, Packs.ACCENTOR).writeText("x")
+        File(dir, Packs.STRESS).writeText("дзякуй дзя+куй\n\n# комментарий\nсталы +сталы\nодно\n")
+        val p = Pack(packJson.toString(), dir)
+        assertTrue(p.accentor)
+        assertEquals(mapOf("дзякуй" to "дзя+куй", "сталы" to "+сталы"), p.corrections)
+    }
+
+    @Test fun installCopiesLanguageFiles() {
+        val extras = mapOf(Packs.ACCENTOR to byteArrayOf(1, 2), Packs.STRESS to "а +а".toByteArray())
+        val p = Packs.install(ByteArrayInputStream(zip(packJson.toString(), "tts_mel.ptl", "backbone.pte", "head.ptl", extras = extras)), filesDir)
+        assertTrue(File(p.dir, Packs.ACCENTOR).isFile)
+        assertEquals(mapOf("а" to "+а"), p.corrections)
+        Packs.delete(filesDir, p.id)
     }
 
     @Test fun installsListsDeletes() {

@@ -1,6 +1,7 @@
 package ru.kost.ruvoice
 
 import android.content.Context
+import ru.kost.ruvoice.text.Layers
 import ru.kost.ruvoice.text.Marks
 import ru.kost.ruvoice.text.Rules
 import ru.kost.ruvoice.text.Stress
@@ -256,7 +257,10 @@ object BookAccent {
         try {
             val d = SileroModels.data(ctx)
             val packs = Packs.installed(ctx.filesDir)
-            val allowed = (Speaker.resolve(prefs.voice, d, packs) ?: Speaker.default(d, packs))?.sym?.allowed ?: d.sym.allowed
+            // книгу озвучит выбранный голос — значит и текстовый слой, и фильтр символов его пака
+            val speaker = Speaker.resolve(prefs.voice, d, packs) ?: Speaker.default(d, packs)
+            val allowed = speaker?.sym?.allowed ?: d.sym.allowed
+            val layer = Layers.of(speaker?.lang)
             val r = prefs.rules()
             // твёрдое [э] — своей галочкой: в книге «кафэ» нужно не всем, кто её слушает
             val hardE = prefs.accentBookHardE
@@ -265,10 +269,11 @@ object BookAccent {
             fun Set<String>.set(key: String, on: Boolean) = if (on == (key in Rules.DEFAULT_OFF)) this + key else this - key
             // без аббревиатур «КП» не читается по буквам и доходит до книги как есть (сокращения «г.», «т. е.» — правило abbrev — раскрываются)
             val rules = Rules(r.off.set("hard_e", hardE).let { if (abbr) it else it.set("spell_cyr", false).set("spell_lat", false) }, r.maxLen, r.focus)
-            val stress = Stress(d, models, prefs.userDict(), rules)
+            val stress = Stress(d, models, prefs.userDict(), rules, layer = layer,
+                corrections = speaker?.pack?.corrections ?: emptyMap())
             val replacements = prefs.replacements()
             // модели — до первого абзаца: иначе 10–30 с загрузки висят на «0 %», будто всё застыло
-            models.ensureStress()
+            models.ensureStress(speaker?.pack)
             // омографы — слова, которым конвейер выбирает ударение по контексту: BERT, грамматика, фразы
             val homo = if (!prefs.accentBookHomoOnly) null else { w: String ->
                 w.replace('ё', 'е').let { e -> listOf(w, e).any { it in d.homodict || it in d.gram || it in d.phrases } }

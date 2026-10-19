@@ -37,9 +37,11 @@ class StressBinTest {
         val parsed = HashMap(DictCache.stress(listOf(src), disk = disk))
         val tmp = File.createTempFile("stress", ".txt").apply { deleteOnExit(); writeText(src.readText()) }
         tmp.setLastModified(src.lastModified())
-        // другой файл — другая подпись: разбор заново, а не файл от прошлого
-        assertEquals(parsed, HashMap(DictCache.stress(listOf(tmp), disk = disk)))
-        val (tag, fromDisk) = StressBin.strings(ByteBuffer.wrap(disk.readBytes()))
+        // другой файл — другая подпись: разбор заново, а не файл от прошлого.
+        // Кэш пишем в НОВЫЙ файл: старый уже отображён в память, а Windows не даёт заменить отображённый файл
+        val disk2 = File.createTempFile("userdict", ".bin").apply { delete(); deleteOnExit() }
+        assertEquals(parsed, HashMap(DictCache.stress(listOf(tmp), disk = disk2)))
+        val (tag, fromDisk) = StressBin.strings(ByteBuffer.wrap(disk2.readBytes()))
         assertEquals(tmp.path, tag.substringBefore('|'))
         assertEquals(parsed.size, fromDisk.size)
         for ((k, v) in parsed) assertEquals(k, v, fromDisk[k])

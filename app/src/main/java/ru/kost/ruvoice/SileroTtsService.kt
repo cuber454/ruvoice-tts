@@ -95,7 +95,7 @@ object Pipeline {
      * стоит знак (запятая, двоеточие, кавычка); без знака — короткая English.JOIN_MS (English.joins). */
     fun plan(text: CharSequence, d: SileroData, sentencePauseMs: Int, paragraphPauseMs: Int,
              replacements: Replacements = Replacements.parse(emptyList()), rules: Rules = Rules(), englishWords: Int = 0,
-             englishJoinMs: Int = English.JOIN_PUNCT_MS): List<Segment> {
+             englishJoinMs: Int = English.JOIN_PUNCT_MS, layer: TextLayer = Layers.RU): List<Segment> {
         val src = text.toString().let { t ->
             if (!rules.on("letter_name")) t else loneLetter.matchEntire(t)?.let { m ->
                 m.groupValues[2][0].let { c -> if (m.groupValues[1].isEmpty() && m.groupValues[3].isEmpty()) Abbrev.loneLetterName(c) else Abbrev.letterName(c) }
@@ -117,7 +117,7 @@ object Pipeline {
         val segments = if (rules.on("ssml") && Ssml.isSsml(src)) Ssml.parse(src) else
             Splitter.paragraphs(src, rules).mapIndexed { i, p -> Segment(p, paragraph = true) }.let { if (it.isEmpty()) it else it.dropLast(1) + it.last().copy(paragraph = false) }
         // длина куска для модели: у чтеца предел куска меряется ею (Splitter.sentences), у быстрого старта — всегда
-        val measure = { s: String -> Normalizer.prepare(Marks.parse(s, 0).text, d.allowed, rules).length }
+        val measure = { s: String -> layer.prepare(Marks.parse(s, 0).text, d.allowed, rules).length }
         val out = ArrayList<Segment>()
         for (seg in segments) {
             // Реплика в абзаце тянется через предложения, пока её не закроет авторский хвост или кавычка.
@@ -200,9 +200,9 @@ object Pipeline {
     /** Текст сегмента → слова для модели с ударениями (до Stress.forModel), тем же путём, что synthSegment. */
     fun accent(text: String, d: SileroData, stress: Stress, allowed: String, rules: Rules): String {
         var t = if (rules.on("exclaim")) Marks.exclaim(text) else text
-        if (rules.on("question") && SentenceType.classify(t, d, rules) == "general_q") t = Marks.question(t)
+        if (rules.on("question") && SentenceType.classify(t, stress.layer.questions(d), rules) == "general_q") t = Marks.question(t)
         val marks = Marks.parse(t, rules.focusLevel)
-        return stress.apply(Normalizer.prepare(marks.text, allowed, rules), marks.text)
+        return stress.apply(stress.layer.prepare(marks.text, allowed, rules), marks.text)
     }
 }
 
@@ -352,15 +352,25 @@ class SileroTtsService : TextToSpeechService() {
     // Английский — если включён хоть один тумблер «Английский другим движком» и выбранный движок стоит:
     // читалка или TalkBack (LocaleSpan) может прямо попросить английский. Русский текст такого запроса
     // всё равно читает Silero (English.split), другому движку уходит только латиница.
-    override fun onIsLanguageAvailable(lang: String?, country: String?, variant: String?): Int =
-        if (lang == "eng") (if (englishReady()) TextToSpeech.LANG_AVAILABLE else TextToSpeech.LANG_NOT_SUPPORTED)
-        else if (lang != "rus") TextToSpeech.LANG_NOT_SUPPORTED
-        else if (!Speaker.hasVoices(packs())) TextToSpeech.LANG_MISSING_DATA
-        else TextToSpeech.LANG_COUNTRY_AVAILABLE
+    // Языки голосов — по установленным пакам: rus есть всегда (штатная модель или русские паки), bel — только
+    // когда стоит пак с lang=be. Новый язык CIS объявляется сам, как только у пака появится его код.
+    override fun onIsLanguageAvailable(lang: String?, country: String?, variant: String?): Int = when {
+        lang == "eng" -> if (englishReady()) TextToSpeech.LANG_AVAILABLE else TextToSpeech.LANG_NOT_SUPPORTED
+        lang == null -> TextToSpeech.LANG_NOT_SUPPORTED
+        lang == "rus" -> if (!Speaker.hasVoices(packs())) TextToSpeech.LANG_MISSING_DATA else TextToSpeech.LANG_COUNTRY_AVAILABLE
+        // ISO-3 от системы («bel») и короткий код пака («be») — одно и то же
+        lang == "bel" || lang == "be" -> if (packs().any { it.lang == "be" }) TextToSpeech.LANG_COUNTRY_AVAILABLE else TextToSpeech.LANG_NOT_SUPPORTED
+        else -> TextToSpeech.LANG_NOT_SUPPORTED
+    }
 
     private fun englishReady(): Boolean = prefs.rules().let { it.on("en_proxy_books") || it.on("en_proxy_sr") } &&
         EnglishProxy.chosen(this, prefs.enEngine) != null
-    override fun onGetLanguage(): Array<String> = arrayOf("rus", "RUS", "")
+
+    /** Язык текущего голоса: по нему система и читалки понимают, на каком языке движок говорит сейчас. */
+    override fun onGetLanguage(): Array<String> {
+        val name = currentName() ?: Speaker.DEFAULT
+        return if (Speaker.lang(name, packs()) == "be") arrayOf("bel", "BEL", "") else arrayOf("rus", "RUS", "")
+    }
     override fun onLoadLanguage(lang: String?, country: String?, variant: String?): Int {
         val r = onIsLanguageAvailable(lang, country, variant)
         // TextToSpeechService.onCreate() зовёт этот метод синхронно на главном потоке — грузить
@@ -400,15 +410,33 @@ class SileroTtsService : TextToSpeechService() {
     /** Имя [currentSpeaker] без SileroData. */
     private fun currentName(): String? = prefs.voice.takeIf { known(it) } ?: Speaker.DEFAULT.takeIf { known(it) } ?: voiceNames().firstOrNull()
 
-    override fun onGetVoices(): List<Voice> = voiceNames().map {
-        Voice(Speaker.ttsName(it), Locale("ru", "RU"), Voice.QUALITY_HIGH, Voice.LATENCY_NORMAL, false, emptySet())
-    } + (if (englishReady()) listOf(Voice(EN_VOICE, Locale.US, Voice.QUALITY_NORMAL, Voice.LATENCY_HIGH, false, emptySet())) else emptyList())
+    // Голоса — каждый со своей локалью по языку пака: по ней TalkBack и читалки находят белорусский голос
+    // и могут сами попросить белорусский язык (LocaleSpan). Имена те же, что раньше: язык в имени голоса уже есть.
+    override fun onGetVoices(): List<Voice> {
+        val ps = packs()
+        return voiceNames().map {
+            Voice(Speaker.ttsName(it, ps), locale(Speaker.lang(it, ps)), Voice.QUALITY_HIGH, Voice.LATENCY_NORMAL, false, emptySet())
+        } + (if (englishReady()) listOf(Voice(EN_VOICE, Locale.US, Voice.QUALITY_NORMAL, Voice.LATENCY_HIGH, false, emptySet())) else emptyList())
+    }
+
+    /** Локаль по коду языка пака: у локали видны и язык, и страна — по ним система и подбирает голос. */
+    private fun locale(lang: String): Locale = when (lang) {
+        "be" -> Locale("be", "BY")
+        "ru" -> Locale("ru", "RU")
+        else -> Locale(lang)
+    }
     override fun onIsValidVoiceName(name: String?): Int =
         if (name == EN_VOICE) (if (englishReady()) TextToSpeech.SUCCESS else TextToSpeech.ERROR)
-        else if (known(Speaker.fromTtsName(name, voiceNames()))) TextToSpeech.SUCCESS else TextToSpeech.ERROR
+        else if (known(Speaker.fromTtsName(name, voiceNames(), packs()))) TextToSpeech.SUCCESS else TextToSpeech.ERROR
     override fun onLoadVoice(name: String?): Int = onIsValidVoiceName(name)
-    override fun onGetDefaultVoiceNameFor(lang: String?, country: String?, variant: String?): String =
-        if (lang == "eng" && englishReady()) EN_VOICE else Speaker.ttsName(currentName() ?: Speaker.DEFAULT)
+    /** Голос по умолчанию для языка: английский — прослойка, белорусский — первый голос белорусского пака. */
+    override fun onGetDefaultVoiceNameFor(lang: String?, country: String?, variant: String?): String {
+        val ps = packs()
+        if (lang == "eng" && englishReady()) return EN_VOICE
+        val code = if (lang == "bel" || lang == "be") "be" else "ru"
+        val name = voiceNames().firstOrNull { Speaker.lang(it, ps) == code } ?: currentName() ?: Speaker.DEFAULT
+        return Speaker.ttsName(name, ps)
+    }
 
     override fun onStop() { stopped = true; synchronized(queued) { forgetApp(currentUid) } }
 
@@ -488,7 +516,7 @@ class SileroTtsService : TextToSpeechService() {
         try {
             // Голос запроса — по именам; models.data и модель — после кэша фраз: готовая фраза звучит сразу, и после
             // перезапуска процесса тоже, пока разбираются данные (~10 с на A32)
-            val asked = Speaker.fromTtsName(request.voiceName, voiceNames()).takeIf { known(it) }
+            val asked = Speaker.fromTtsName(request.voiceName, voiceNames(), packs()).takeIf { known(it) }
             val wantedName = asked ?: currentName() ?: run {
                 Log.e(SileroModels.TAG, "голосов нет: сборка без модели и без пака"); callback.error(TextToSpeech.ERROR_NOT_INSTALLED_YET); return
             }
@@ -569,7 +597,10 @@ class SileroTtsService : TextToSpeechService() {
             val speakerId = voice.id
             val sym = voice.sym
             models.threads = if (rules.on("fast_cores")) SileroModels.fastCores else Runtime.getRuntime().availableProcessors()
-            val stress = Stress(d, models, if (noDict) emptyMap() else prefs.userDict(), rules)
+            // Текстовый слой — по языку пака голоса (не по сборке): ru — прежний русский путь, be — белорусский
+            val layer = Layers.of(voice.lang)
+            val stress = Stress(d, models, if (noDict) emptyMap() else prefs.userDict(), rules, layer = layer,
+                corrections = voice.pack?.corrections ?: emptyMap())
             // вкладка «Проверка»: имена — по исходному тексту сегмента
             val audit = prefs.audit; val known = Audit.known(d, if (noDict) emptyMap() else prefs.userDict())
             val replacements = prefs.replacements()
@@ -593,7 +624,7 @@ class SileroTtsService : TextToSpeechService() {
             val enWords = if (enEngine == null) 0 else if (askedEnglish) English.MIN_WORDS
                 else (if (screenReader) prefs.enMinWordsSr else prefs.enMinWords).coerceIn(English.MIN_WORDS, English.MAX_WORDS)
             fun planOf(t: String) = Pipeline.plan(t, d, if (noPauses) 0 else prefs.sentencePauseMs, if (noPauses) 0 else prefs.paragraphPauseMs, replacements, rules, enWords,
-                maxOf(prefs.commaPauseMs, English.JOIN_MS))
+                maxOf(prefs.commaPauseMs, English.JOIN_MS), layer)
             val segments = planOf(reqText)
             // заготовка годится, если считана с тем же голосом, высотой и настройками; темп и громкость — при отдаче
             fun keyOf(t: String) = listOf(prefs.stamp(), prefs.dictStamp(), wantedName, packs().joinToString(",") { "${it.id}:${java.io.File(it.dir, "pack.json").lastModified()}" },
@@ -642,10 +673,11 @@ class SileroTtsService : TextToSpeechService() {
                 try {
                 // Замены Pipeline.plan уже применил к seg.text; тип предложения классифицируется
                 // по этому же тексту — так и надо.
+                val questions = layer.questions(d)
                 var text = if (rules.on("exclaim")) Marks.exclaim(seg.text) else seg.text
-                if (rules.on("question") && SentenceType.classify(text, d, rules) == "general_q") text = Marks.question(text)
+                if (rules.on("question") && SentenceType.classify(text, questions, rules) == "general_q") text = Marks.question(text)
                 val marks = Marks.parse(text, rules.focusLevel)
-                val prepared = Normalizer.prepare(marks.text, sym.allowed, rules)
+                val prepared = layer.prepare(marks.text, sym.allowed, rules)
                 if (prepared.none { it != '+' && it in sym.alphabet }) return null
                 // Монитор models — тот же, что у SileroModels.release()/ensureLoaded() (оба @Synchronized
                 // на this), поэтому выгрузка по простою не может destroy() модуль посреди forward.
@@ -661,12 +693,17 @@ class SileroTtsService : TextToSpeechService() {
                         val forModel = stress.forModel(spoken)
                         if (!screenReader && rules.on("verbose_log")) note("в модель: «${visible(forModel)}»")
                         val seq = sym.sequence(forModel)
-                        // интонация вопросов/восклицаний и логическое ударение есть только у v5_5_ru
-                        val typeIds = if (voice.types) SentenceType.typeIds(prepared, SentenceType.classify(marks.text, d, rules), seq.size, d) else LongArray(seq.size)
+                        // Тип предложения один раз: у модели с types он уходит в type_ids (v5_5_ru умеет сама),
+                        // у паков без types — в контур высоты ниже. Правило «интонация» выключено — всегда st.
+                        val sentenceType = SentenceType.classify(marks.text, questions, rules)
+                        val typeIds = if (voice.types) SentenceType.typeIds(prepared, sentenceType, seq.size, d) else LongArray(seq.size)
                         val curSpeakerId = if (seg.speech) quoteSpeakerId ?: speakerId else speakerId
                         val curPitch = pitch * (if (seg.speech) quotePitch else 1f)
                         val al = Marks.align(marks.words, spoken, seq.size, sym)
                         for (i in al.pitches.indices) al.pitches[i] *= curPitch
+                        // У пака без types входа «тип предложения» нет вовсе (11 аргументов forward против 13):
+                        // вопрос звучал бы утверждением, а «!» до модели не доходит. Контур высоты ставим по символам.
+                        if (!voice.types && rules.on("intonation")) Intonation.apply(sentenceType, rules.focus, al.pitches)
                         // seq = sos + spoken + eos, индексы совпадают с durs напрямую.
                         // seq[1] — первый символ сегмента: тире перед репликой («— Привет»), пауза там — тишина до слов.
                         // Тире после знака («, —», «! —») — авторская ремарка, паузу уже дал сам знак.

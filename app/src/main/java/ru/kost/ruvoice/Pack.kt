@@ -10,7 +10,8 @@ import java.util.zip.ZipException
 import java.util.zip.ZipInputStream
 
 /** Пак голосов: `filesDir/packs/<id>/{pack.json, tts_mel.ptl, backbone.pte, head.ptl}` — та же нарезка,
- * что у штатной модели в assets. Формат — спека 2026-09-18. */
+ * что у штатной модели в assets. Формат — спека 2026-09-18; сверху (по желанию) два файла языка:
+ * `accentor.ptl` — акцентор этого языка и `stress.txt` — поправки ударений (слово → слово с «+»). */
 class Pack(json: String, val dir: File) {
     val id: String
     val title: String
@@ -23,6 +24,17 @@ class Pack(json: String, val dir: File) {
     val bases: Map<String, String>
     /** forward с type_ids и focus_mask (13 аргументов, v5_5_ru); false — 11, как у v5_ru и cis. */
     val types: Boolean
+    /** Язык текста пака: `ru` (умолчание — у старых паков поля нет), `be` и другие коды CIS-модели. */
+    val lang: String
+    /** Акцентор лежит в самом паке: тогда язык читается своим акцентором, а не штатным русским. */
+    val accentor: Boolean get() = File(dir, Packs.ACCENTOR).isFile
+    /** Поправки ударений пака: слово → слово с «+»; пусто — пак их не принёс. */
+    val corrections: Map<String, String> by lazy {
+        val f = File(dir, Packs.STRESS)
+        if (!f.isFile) emptyMap() else HashMap<String, String>().also { out ->
+            f.forEachLine { line -> DictLines.parseStress(line)?.let { (w, v) -> out[w.lowercase()] = v } }
+        }
+    }
     val size: Long get() = Packs.MODEL_FILES.sumOf { File(dir, it).length() }
 
     init {
@@ -35,6 +47,7 @@ class Pack(json: String, val dir: File) {
         speakers = o.getJSONObject("speakers").let { j -> j.keys().asSequence().associateWith { j.getInt(it) } }
         if (speakers.isEmpty()) throw UserError("В паке нет голосов", R.string.err_pack_no_voices)
         types = o.optBoolean("types", false)
+        lang = o.optString("lang", "ru").lowercase()
         bases = o.optJSONObject("bases")?.let { j -> j.keys().asSequence().associateWith { j.getString(it) } } ?: emptyMap()
     }
 }
@@ -42,6 +55,11 @@ class Pack(json: String, val dir: File) {
 object Packs {
     const val FORMAT = 2
     val MODEL_FILES = listOf("tts_mel.ptl", "backbone.pte", "head.ptl")
+    /** Файлы языка в паке: нужны не всем, поэтому необязательные. */
+    const val ACCENTOR = "accentor.ptl"
+    const val STRESS = "stress.txt"
+    /** Необязательные файлы пака: копируем, если пришли; обязательными не считаем. */
+    private val EXTRA_FILES = listOf(ACCENTOR, STRESS)
     val ID_RE = Regex("[a-z0-9_]{1,40}")
     const val NOT_A_PACK = "Это не пак RuVoice"
     private fun notAPack(cause: Throwable? = null) = UserError(NOT_A_PACK, R.string.err_not_pack, cause = cause)
@@ -88,7 +106,7 @@ object Packs {
                         val e = z.nextEntry ?: break
                         when (e.name) {
                             "pack.json" -> json = z.readBytes().decodeToString()
-                            in MODEL_FILES -> File(tmp, e.name).outputStream().use { z.copyTo(it) }
+                            in MODEL_FILES, in EXTRA_FILES -> File(tmp, e.name).outputStream().use { z.copyTo(it) }
                         }
                         z.closeEntry()
                     }
