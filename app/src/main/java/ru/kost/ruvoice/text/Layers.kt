@@ -42,6 +42,10 @@ interface TextLayer {
     /** Имя буквы, когда запрос — одна буква (правило letter_name, эхо ввода [LetterEcho]): [lone] — в запросе
      * ничего, кроме буквы, [end] — имя последнее во фразе. null — буквы в таблице языка нет. */
     fun letterName(c: Char, lone: Boolean = false, end: Boolean = true): String?
+
+    /** Имя одиночного знака (клавиша «#», знак под курсором); [punct] — эхо удаления [LetterEcho]: там называем
+     * и обычную пунктуацию. null — не называем, знак идёт как есть. */
+    fun symbolName(c: Char, punct: Boolean = false): String?
 }
 
 /** Русский слой — ровно то, что было до появления второго языка: [Normalizer] и данные stress.bin. */
@@ -51,6 +55,7 @@ object RuLayer : TextLayer {
     override fun prepare(text: String, allowed: String, rules: Rules): String = Normalizer.prepare(text, allowed, rules)
     override fun questions(d: SileroData): QuestionLists = d
     override fun letterName(c: Char, lone: Boolean, end: Boolean) = if (lone) Abbrev.loneLetterName(c, end) else Abbrev.letterName(c)
+    override fun symbolName(c: Char, punct: Boolean) = (if (punct) LetterEcho.PUNCT_NAMES[c] else null) ?: SymbolNames.of(c)
 }
 
 /** Белорусский слой: [BelNormalizer] (числа словами, «!» → «.», апостроф, фильтр по символам пака). */
@@ -67,7 +72,14 @@ object BeLayer : TextLayer {
         val i = n.indexOfFirst { it in "аеёіоуыэюя" }
         if (i < 0) n else n.substring(0, i) + "+" + n.substring(i)
     }
+    /** Только основные знаки; прочие (стрелки, валюты) идут как есть — таблицы SymbolNames и CLDR русские. */
+    override fun symbolName(c: Char, punct: Boolean) = BE_SYMBOLS[c]
 }
+
+// формы не проверены носителем; апостроф в «двукроп'е» BelNormalizer снимает, слово остаётся целым: «двукропе»
+private val BE_SYMBOLS = mapOf(
+    ',' to "коска", '.' to "кропка", '!' to "клічнік", '?' to "пытальнік", ':' to "двукроп'е", ';' to "кропка з коскай",
+    '—' to "працяжнік", '-' to "злучок", '"' to "двукоссе", '(' to "адкрываецца дужка", ')' to "закрываецца дужка")
 
 private val BE_LETTERS = mapOf(
     'а' to "а", 'б' to "бэ", 'в' to "вэ", 'г' to "гэ", 'д' to "дэ", 'е' to "е", 'ё' to "ё", 'ж' to "жэ", 'з' to "зэ",

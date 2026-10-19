@@ -107,7 +107,7 @@ object BelNormalizer {
     }
 
     /** Число по цифрам: «80291234567» → «восем нуль два…». */
-    private fun digits(raw: String) = raw.map { UNITS[it - '0'] }.joinToString(" ")
+    fun digits(raw: String) = raw.map { UNITS[it - '0'] }.joinToString(" ")
 
     /** С миллиарда — по цифрам: разрядов дальше нет (телефон, номер карты), а under1000 на них падал. */
     private const val BIG = 1_000_000_000L
@@ -190,7 +190,11 @@ object BelNormalizer {
      * «29 123 45 67», номер карты «4276 1234…» и «1 2 3» — отдельные числа. */
     private val DIGIT_GROUP_RE = Regex("(?<!\\d[ \\u00A0\\u202F]?)\\d{1,3}(?:[ \\u00A0\\u202F]\\d{3})+(?![ \\u00A0\\u202F]?\\d)|\\d+")
 
-    /** Число словами: до 999 999 999, длиннее — по цифрам; с годом — порядковым и в нужном падеже. */
+    /** Десятичная дробь: целая часть (можно разрядами, как [DIGIT_GROUP_RE]), точка или запятая, цифры; не кусок
+     * «1.10.2» или IP-адреса. */
+    private val DECIMAL_RE = Regex("""(?<![\d.,]|\d[ \x{A0}\x{202F}])(\d{1,3}(?:[ \x{A0}\x{202F}]\d{3})+|\d+)[.,](\d+)(?![.,]?\d)""")
+
+    /** Число словами: до 999 999 999, длиннее — по цифрам; с годом — порядковым и в нужном падеже; дробь — [BelNumbers.decimal]. */
     fun numberWords(text: String): String {
         var s = YEAR_RE.replace(text) { m ->
             val n = m.groupValues[1].toLongOrNull() ?: return@replace m.value
@@ -202,6 +206,8 @@ object BelNormalizer {
             }
             ordinal(n, form) + " " + word
         }
+        // дробь без единицы: «3,14», «1.5»; «12.05» сюда не доходит — его уже прочли датой
+        s = DECIMAL_RE.replace(s) { m -> BelNumbers.decimal(m.groupValues[1].filter { it.isDigit() }, m.groupValues[2]) }
         s = DIGIT_GROUP_RE.replace(s) { m ->
             val raw = m.value.filter { it.isDigit() }
             raw.toLongOrNull()?.let { cardinal(it) } ?: digits(raw)

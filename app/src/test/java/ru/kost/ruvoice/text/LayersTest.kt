@@ -115,6 +115,25 @@ class LayersTest {
         assertEquals("удаление, +эл, заглавная", Pipeline.plan("Удаление заглавная Л", d, 0, 0, rules = Rules().with("letter_echo_all", true)).single().text)
     }
 
+    @Test fun belSymbolNames() {
+        val d = TestData.data()
+        val echo = Rules().with("letter_echo_all", true)
+        fun first(t: String, rules: Rules = Rules()) = Pipeline.plan(t, d, 0, 0, rules = rules, layer = BeLayer, allowed = cis).single().text
+        // одиночный знак и эхо удаления — белорусскими именами (формы не проверены носителем)
+        assertEquals("клічнік", first("!"))
+        assertEquals("кропка з коскай", first(";"))
+        assertEquals("адкрываецца дужка", first("("))
+        assertEquals("удаление, коска", first("Удаление ,", echo))
+        // апостроф «двукроп'е» снимает BelNormalizer — слово целое
+        assertEquals("двукропе", BeLayer.prepare(first(":"), cis, Rules()))
+        // прочие знаки — как есть, не русскими словами
+        assertEquals(null, BeLayer.symbolName('#'))
+        assertEquals(null, BeLayer.symbolName('@', punct = true))
+        // русский — как был: в эхе своя пунктуация, иначе SymbolNames
+        assertEquals("запятая", RuLayer.symbolName(',', punct = true))
+        assertEquals("решётка", RuLayer.symbolName('#'))
+    }
+
     @Test fun ruQuestionsAreItsOwn() {
         val d = TestData.data()
         assertEquals("wh_q", SentenceType.classify("Где ты был?", RuLayer.questions(d)))

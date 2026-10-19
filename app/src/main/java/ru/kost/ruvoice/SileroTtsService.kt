@@ -1,5 +1,6 @@
 package ru.kost.ruvoice
 
+import android.app.LocaleManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -113,7 +114,7 @@ object Pipeline {
                 // у экранного чтеца всегда, у книг и приложений — тумблером letter_echo_all
                 ?: (if (rules.on(Rules.LETTER_ECHO) || rules.on("letter_echo_all")) LetterEcho.rewrite(t, layer) else null)
                 // одиночный знак (клавиша «#», знак под курсором) — по имени, иначе фильтр оставит тишину
-                ?: t.trim().singleOrNull()?.let { SymbolNames.of(it) } ?: t
+                ?: t.trim().singleOrNull()?.let { layer.symbolName(it) } ?: t
         }
         // Последний абзац запроса намеренно без паузы абзаца — свою паузу до следующей
         // реплики читалка/пользователь и так делают между вызовами.
@@ -309,8 +310,11 @@ class SileroTtsService : TextToSpeechService() {
         // словари замен (~0,7 с). Модель — здесь сразу (нативная загрузка, GC не мешает), словари — вторым потоком,
         // данные готовит поток самой фразы. Больше потоков на Java-разборе на A32 выходило медленнее: упирается в GC.
         val dicts = Thread { runCatching {
-            val lang = currentName()?.let { Speaker.lang(it, packs()) } ?: "ru"
+            val cur = currentName()
+            val lang = cur?.let { Speaker.lang(it, packs()) } ?: "ru"
             prefs.userDict(lang); prefs.replacements(lang)
+            // поправки пака (stress.txt) ленивые: иначе их разбор пришёлся бы на первую фразу
+            cur?.let { packOf(it)?.corrections }
         }.onFailure { Log.e(SileroModels.TAG, "прогрев", it) } }.apply { start() }
         // греем тройку голоса из настроек, а не штатную: иначе первый запрос перегружает 90 МБ; пак — по имени, без data
         val name = currentName() ?: return   // lite без пака: голосов нет
@@ -381,8 +385,11 @@ class SileroTtsService : TextToSpeechService() {
         // Загружен любой голос — не трогаем: запрос сам загрузит свой (request.voiceName), а голос из настроек здесь
         // выгнал бы голос чтеца, и следующая фраза снова грузила бы модель — секунды тишины на каждой.
         if (r == TextToSpeech.LANG_COUNTRY_AVAILABLE && Looper.myLooper() != Looper.getMainLooper() && !models.loaded) {
-            val s = currentSpeaker() ?: return TextToSpeech.LANG_MISSING_DATA   // lite без пака: читалка предложит установить данные
-            runCatching { models.ensureLoaded(s.pack) }.onFailure {
+            // не русский — голос этого языка (тот же, что onGetDefaultVoiceNameFor) и его пак, а не голос из настроек
+            val code = Layers.ofIso3(lang)?.code
+            val pack = if (code != null && code != "ru") packOf(voiceFor(code))
+                else (currentSpeaker() ?: return TextToSpeech.LANG_MISSING_DATA).pack   // lite без пака: читалка предложит установить данные
+            runCatching { models.ensureLoaded(pack) }.onFailure {
                 Log.e(SileroModels.TAG, "загрузка моделей", it); return TextToSpeech.LANG_NOT_SUPPORTED
             }
             scheduleUnload()
@@ -410,7 +417,7 @@ class SileroTtsService : TextToSpeechService() {
     private fun voiceNames() = Speaker.names(SileroModels.speakers(this), packs())
     private fun known(name: String?) = Speaker.exists(name, SileroModels.speakers(this), packs())
     /** Имя [currentSpeaker] без SileroData. */
-    private fun currentName(): String? = prefs.voice.takeIf { known(it) } ?: Speaker.DEFAULT.takeIf { known(it) } ?: voiceNames().firstOrNull()
+    private fun currentName(): String? = prefs.voice.takeIf { known(it) } ?: Speaker.defaultName(SileroModels.speakers(this), packs())
 
     // Голоса — каждый со своей локалью по языку пака: по ней TalkBack и читалки находят белорусский голос
     // и могут сами попросить белорусский язык (LocaleSpan). Имена те же, что раньше: язык в имени голоса уже есть.
@@ -429,12 +436,19 @@ class SileroTtsService : TextToSpeechService() {
     override fun onGetDefaultVoiceNameFor(lang: String?, country: String?, variant: String?): String {
         if (lang == "eng" && englishReady()) return EN_VOICE
         val ps = packs()
-        val cur = currentName() ?: Speaker.DEFAULT
-        val code = Layers.ofIso3(lang)?.code ?: return Speaker.ttsName(cur, ps)
-        // язык системы, а не Locale.getDefault(): у приложения свой язык интерфейса
-        val system = ConfigurationCompat.getLocales(Resources.getSystem().configuration)[0]?.language
-        return Speaker.ttsName(Speaker.defaultFor(code, cur, system, voiceNames(), ps), ps)
+        val code = Layers.ofIso3(lang)?.code ?: return Speaker.ttsName(currentName() ?: Speaker.DEFAULT, ps)
+        return Speaker.ttsName(voiceFor(code), ps)
     }
+
+    /** Голос для языка [code] (ru, be) — Speaker.defaultFor от выбранного голоса и языка системы. */
+    private fun voiceFor(code: String): String =
+        Speaker.defaultFor(code, currentName() ?: Speaker.DEFAULT, systemLang(), voiceNames(), packs())
+
+    /** Язык системы, а не Locale.getDefault(): у приложения свой язык интерфейса, а на API 33+ и Resources.getSystem()
+     * может отдать его — там спрашиваем LocaleManager. null — список пуст, правило «язык системы» не действует. */
+    private fun systemLang(): String? =
+        if (Build.VERSION.SDK_INT >= 33) getSystemService(LocaleManager::class.java)?.systemLocales?.get(0)?.language
+        else ConfigurationCompat.getLocales(Resources.getSystem().configuration)[0]?.language
 
     override fun onStop() { stopped = true; synchronized(queued) { forgetApp(currentUid) } }
 
@@ -524,7 +538,8 @@ class SileroTtsService : TextToSpeechService() {
             // «Прослушать» в самом приложении не в счёт: голос там меняют на вкладке «Голос» (VoiceFragment).
             // Пакеты обычных читалок с Android 11 нам не видны (caller null) — тогда читалка по uid, иначе все они
             // делили бы один «прошлый голос» и две читалки с разными голосами дёргали бы профиль на каждой фразе
-            if (asked != null && request.callerUid != android.os.Process.myUid()) {
+            // Голос другого языка (TalkBack на LocaleSpan be) профиль не переключает — Speaker.followsProfile
+            if (asked != null && request.callerUid != android.os.Process.myUid() && Speaker.followsProfile(asked, currentName(), packs())) {
                 val who = caller?.pkg ?: "uid ${request.callerUid}"
                 Profiles(this).followVoice(who, asked)?.let { note("профиль «${it.name}»: $who выбрала голос $asked") }
             }

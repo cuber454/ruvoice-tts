@@ -12,7 +12,8 @@ import java.util.zip.ZipInputStream
 
 /** Пак голосов: `filesDir/packs/<id>/{pack.json, tts_mel.ptl, backbone.pte, head.ptl}` — та же нарезка,
  * что у штатной модели в assets. Формат — спека 2026-09-18; сверху (по желанию) два файла языка:
- * `accentor.ptl` — акцентор этого языка и `stress.txt` — поправки ударений (слово → слово с «+»). */
+ * `accentor.ptl` — акцентор этого языка и `stress.txt` — поправки ударений (слово → слово с «+»; только языкам
+ * не ru, см. [corrections]). */
 class Pack(json: String, val dir: File) {
     val id: String
     val title: String
@@ -27,12 +28,15 @@ class Pack(json: String, val dir: File) {
     val types: Boolean
     /** Язык текста пака: `ru` (умолчание — у старых паков поля нет), `be` и другие коды CIS-модели. */
     val lang: String
+    /** Поле `format` (Packs.FORMATS): пак не на русском ставится только с 3. */
+    val format: Int
     /** Голос пака по умолчанию (поле `default`): его система получает, когда просит язык пака. null — поля нет. */
     val defaultVoice: String?
     /** Акцентор лежит в самом паке: тогда язык читается своим акцентором, а не штатным русским. */
     val accentor: Boolean get() = File(dir, Packs.ACCENTOR).isFile
-    /** Поправки ударений пака: слово → слово с «+»; пусто — пак их не принёс. Апостроф («аб'ява») убираем с обеих
-     * сторон: BelNormalizer снимает его до ударений, и слово с ним не нашлось бы. */
+    /** Поправки ударений пака: слово → слово с «+»; пусто — пак их не принёс. Действуют только у языков не ru
+     * (слой со своим stress, BelStress): у русского RuLayer.stress == null, его конвейер Stress поправок пака не читает.
+     * Апостроф («аб'ява») убираем с обеих сторон: BelNormalizer снимает его до ударений, и слово с ним не нашлось бы. */
     val corrections: Map<String, String> by lazy {
         val f = File(dir, Packs.STRESS)
         val apo = Regex("['’]")
@@ -45,7 +49,8 @@ class Pack(json: String, val dir: File) {
 
     init {
         val o = JSONObject(json)
-        if (o.optInt("format") !in Packs.FORMATS) o.optString("format").let { throw UserError("Пак собран для другой версии приложения (формат $it)", R.string.err_pack_format, it) }
+        format = o.optInt("format")
+        if (format !in Packs.FORMATS) o.optString("format").let { throw UserError("Пак собран для другой версии приложения (формат $it)", R.string.err_pack_format, it) }
         id = o.getString("id")
         require(Packs.ID_RE.matches(id)) { "Недопустимый id пака: $id" }
         title = o.optString("title", id); license = o.optString("license", ""); source = o.optString("source", "")
@@ -129,6 +134,8 @@ object Packs {
             val pack = try { Pack(text, tmp) } catch (e: IllegalArgumentException) { throw e } catch (e: Exception) { throw notAPack() }
             // язык без своего слоя читался бы русским нормализатором, а без своего акцентора — русским акцентором
             if (!Layers.has(pack.lang)) throw UserError("Язык пака «${pack.lang}» приложение не знает", R.string.err_pack_lang, pack.lang)
+            // формат 2 приложения до 1.1 принимают и читали бы такой пак русским слоем: не на русском — только 3
+            if (pack.lang != "ru" && pack.format < 3) throw UserError("Пак собран для другой версии приложения (формат ${pack.format})", R.string.err_pack_format, pack.format.toString())
             if (pack.lang != "ru" && !pack.accentor) throw UserError("В паке на языке «${pack.lang}» нет акцентора $ACCENTOR", R.string.err_pack_accentor, pack.lang)
             File(tmp, "pack.json").writeText(text)
             val dest = File(packs, pack.id)

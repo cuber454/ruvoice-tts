@@ -4,7 +4,10 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import ru.kost.ruvoice.bin.StressBin
 import java.io.File
+import java.io.RandomAccessFile
+import java.nio.channels.FileChannel
 
 class DictCacheTest {
     @get:Rule val tmp = TemporaryFolder()
@@ -45,6 +48,33 @@ class DictCacheTest {
         assertSame(b1, DictCache.replacements(listOf(be), lang = "be"))
         val s1 = DictCache.stress(listOf(ru)); DictCache.stress(listOf(be), lang = "be")
         assertSame(s1, DictCache.stress(listOf(ru)))
+    }
+
+    @Test fun ruDiskCacheAsBefore() {
+        // у русского имя файла и подпись в нём — как в 1.0.1: кэш после обновления не пересобирается
+        assertEquals("userdict.bin", DictCache.diskName("ru"))
+        assertEquals("userdict-be.bin", DictCache.diskName("be"))
+        val a = file("disk_a.txt", "творог твор+ог\n"); val disk = File(tmp.root, "userdict.bin")
+        DictCache.stress(listOf(a), disk = disk)
+        val tag = RandomAccessFile(disk, "r").channel.use { StressBin.strings(it.map(FileChannel.MapMode.READ_ONLY, 0, it.size())).first }
+        assertEquals("${a.path}|${a.lastModified()}|${a.length()}", tag)
+    }
+
+    @Test fun systemListsOnlyForRu() {
+        val files = listOf(Dicts.SYSTEM, Dicts.REMOVED, Dicts.MAIN, Dicts.NAMES).map { File(tmp.root, "$it.txt") }
+        assertEquals(files, Dicts.forLang(files, "ru"))
+        assertEquals(listOf(Dicts.MAIN, Dicts.NAMES), Dicts.forLang(files, "be").map { Dicts.name(it) })
+    }
+
+    @Test fun warmBuildsSnapshotOfItsLanguage() {
+        // прогрев после правки у белорусского голоса пересобирает его снимок, а русский не трогает
+        val ru = file("warm_ru.txt", "кот = к+от\n"); val be = file("warm_be.txt", "кот = к+от\n")
+        val r0 = DictCache.replacements(listOf(ru))
+        DictCache.warm(listOf(be), Dicts.Kind.REPLACE, {}, {}, lang = "be").join()
+        assertSame(r0, DictCache.replacements(listOf(ru)))
+        val s0 = DictCache.stress(listOf(ru))
+        DictCache.warm(listOf(be), Dicts.Kind.STRESS, {}, {}, lang = "be").join()
+        assertSame(s0, DictCache.stress(listOf(ru)))
     }
 
     @Test fun warmReportsProgressAndDone() {

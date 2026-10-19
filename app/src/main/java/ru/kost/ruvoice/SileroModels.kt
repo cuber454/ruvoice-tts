@@ -130,6 +130,12 @@ class SileroModels(private val context: Context) : StressModels {
         acc?.destroy(); homo?.destroy(); acc = null; homo = null; accLoadedDir = null
     }
 
+    /** Пак [id] поставлен заново или удалён: выгружаем, только если из него загружена тройка или акцентор — установка
+     * чужого пака не должна заставлять TalkBack грузить модели заново. */
+    @Synchronized fun releasePack(id: String) {
+        if (loadedPack == id || accLoadedDir?.let { File(it).name } == id) release()
+    }
+
     /** BERT-омографы — только русские (ассет штатной модели). */
     @Synchronized private fun ensureHomo() {
         if (homo == null) homo = LiteModuleLoader.loadModuleFromAsset(context.assets, "silero/homo.ptl")

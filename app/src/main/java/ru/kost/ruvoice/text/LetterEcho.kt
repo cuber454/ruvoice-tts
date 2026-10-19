@@ -33,8 +33,8 @@ object LetterEcho {
     private val FILLER = setOf("текст", "текста")
 
     /** Обычная пунктуация, которую SymbolNames не называет (в тексте это паузы); имена — как у TalkBack
-     * (utils/src/main/res/values-ru/strings_symbols.xml), чтобы голос не спорил с чтецом. */
-    private val PUNCT_NAMES = mapOf(',' to "запятая", '.' to "точка", '!' to "восклицательный знак", '?' to "вопросительный знак",
+     * (utils/src/main/res/values-ru/strings_symbols.xml), чтобы голос не спорил с чтецом. Русские: берёт RuLayer.symbolName. */
+    val PUNCT_NAMES = mapOf(',' to "запятая", '.' to "точка", '!' to "восклицательный знак", '?' to "вопросительный знак",
         ':' to "двоеточие", ';' to "точка с запятой", '"' to "кавычка", '\'' to "апостроф", '-' to "дефис", '—' to "длинное тире",
         '–' to "короткое тире", '…' to "многоточие", '(' to "открывающая скобка", ')' to "закрывающая скобка",
         '«' to "открывающая кавычка", '»' to "закрывающая кавычка")
@@ -77,7 +77,7 @@ object LetterEcho {
             subjects.all { it is Tok.Letter && it.c.equals((subjects[0] as Tok.Letter).c, ignoreCase = true) } ->
                 // имя как у голой буквы («в+э.», «— +ы» — иначе «вы», «пы»); точку перед следующей частью заменяет запятая
                 layer.letterName((subjects[0] as Tok.Letter).c, lone = true, end = tail.isEmpty())
-            subjects.size == 1 && subjects[0] is Tok.Symbol -> (subjects[0] as Tok.Symbol).c.let { PUNCT_NAMES[it] ?: SymbolNames.of(it) }
+            subjects.size == 1 && subjects[0] is Tok.Symbol -> layer.symbolName((subjects[0] as Tok.Symbol).c, punct = true)
             else -> null
         } ?: return null
         return listOfNotNull(joined(toks.subList(0, first)), if (tail.isEmpty()) name else name.trimEnd('.'), *tail.toTypedArray())

@@ -98,6 +98,19 @@ class PackTest {
         Packs.delete(filesDir, "p_be"); Packs.delete(filesDir, "p_ru")
     }
 
+    @Test fun foreignPackNeedsFormatThree() {
+        // пак формата 2 не на русском приложения до 1.1 приняли бы и читали русским слоем — не ставим
+        val json = JSONObject(packJson.toString()).put("id", "p_be2").put("lang", "be")
+        val zip = zip(json.toString(), "tts_mel.ptl", "backbone.pte", "head.ptl", extras = mapOf(Packs.ACCENTOR to byteArrayOf(1)))
+        val e = assertThrows(UserError::class.java) { Packs.install(ByteArrayInputStream(zip), filesDir) }
+        assertEquals(R.string.err_pack_format, e.res)
+        assertTrue(Packs.installed(filesDir).isEmpty())
+        assertEquals(2, Pack(json.toString(), File(".")).format)
+        // русский пак формата 2 — как раньше
+        assertEquals(2, Packs.install(ByteArrayInputStream(full), filesDir).format)
+        Packs.delete(filesDir, "cis_ru")
+    }
+
     @Test fun installCopiesLanguageFiles() {
         val extras = mapOf(Packs.ACCENTOR to byteArrayOf(1, 2), Packs.STRESS to "а +а".toByteArray())
         val p = Packs.install(ByteArrayInputStream(zip(packJson.toString(), "tts_mel.ptl", "backbone.pte", "head.ptl", extras = extras)), filesDir)

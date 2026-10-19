@@ -31,9 +31,12 @@ class Speaker(val name: String, val pack: Pack?, val id: Int, val sym: Symbols, 
             return of(pack, name.substring(i + 1))
         }
 
-        /** Голос по умолчанию: «xenia» (штатная или из пака ru), иначе первый голос первого пака; null — голосов нет. */
-        fun default(d: SileroData, packs: List<Pack>): Speaker? =
-            resolve(DEFAULT, d, packs) ?: names(d, packs).firstOrNull()?.let { resolve(it, d, packs) }
+        /** Голос по умолчанию: «xenia» (штатная или из пака ru), иначе голос по умолчанию пака (поле default: в lite
+         * только с cis_be — bel_larisa), иначе первый голос первого пака; null — голосов нет. */
+        fun default(d: SileroData, packs: List<Pack>): Speaker? = defaultName(d.speakers.keys, packs)?.let { resolve(it, d, packs) }
+        /** Имя [default] без SileroData — по одним именам штатных голосов, как [exists]. */
+        fun defaultName(builtinNames: Set<String>, packs: List<Pack>): String? = DEFAULT.takeIf { exists(it, builtinNames, packs) }
+            ?: packs.firstNotNullOfOrNull { p -> p.defaultVoice?.let { packName(p, it) } } ?: names(builtinNames, packs).firstOrNull()
 
         /** Есть ли хоть один голос: встроенная модель или пак с голосами. Без разбора silero_ru.json. */
         fun hasVoices(packs: List<Pack>) = builtin || packs.any { it.speakers.isNotEmpty() }
@@ -70,6 +73,11 @@ class Speaker(val name: String, val pack: Pack?, val id: Int, val sym: Symbols, 
         /** Язык голоса по имени: у голоса пака — язык пака, остальное (штатная модель) — русский. */
         fun lang(name: String, packs: List<Pack>): String =
             name.indexOf('/').takeIf { it > 0 }?.let { i -> packs.firstOrNull { it.id == name.substring(0, i) }?.lang } ?: "ru"
+        /** Переключать ли профиль на голос [asked] запроса: только голос языка выбранного [current]. TalkBack на LocaleSpan
+         * просит белорусский голос (defaultFor) — профиль белорусского голоса остался бы в prefs, и русский текст дальше
+         * читался бы им: «язык системы» в defaultFor отдаёт выбранный голос. */
+        fun followsProfile(asked: String, current: String?, packs: List<Pack>): Boolean =
+            current == null || lang(asked, packs) == lang(current, packs)
         /** Обратно из [ttsName]; имя в старой форме «ru-ru-cis_ru/ru_marat» (до 0.15) — тоже. */
         fun fromTtsName(tts: String?, d: SileroData, packs: List<Pack>): String? = fromTtsName(tts, names(d, packs), packs)
         fun fromTtsName(tts: String?, names: List<String>, packs: List<Pack>): String? =

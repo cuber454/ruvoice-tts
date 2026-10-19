@@ -163,12 +163,12 @@ class Prefs(private val context: Context) {
         }
     }
 
-    /** Списки для голоса на языке [lang]: системные ударения и замены русские, голосу другого языка — только свои. */
-    private fun langDictFiles(kind: Dicts.Kind, lang: String) = enabledDictFiles(kind).filter { lang == "ru" || !Dicts.isSystem(Dicts.name(it)) }
+    /** Списки для голоса на языке [lang] (Dicts.forLang); их же греет вкладка словарей. */
+    fun langDictFiles(kind: Dicts.Kind, lang: String) = Dicts.forLang(enabledDictFiles(kind), lang)
 
     /** Слитые включённые списки ударений, из кэша процесса; кэш на диске у каждого языка свой. */
     fun userDict(lang: String = "ru"): Map<String, String> = DictCache.stress(langDictFiles(Dicts.Kind.STRESS, lang),
-        disk = File(context.cacheDir, if (lang == "ru") "userdict.bin" else "userdict-$lang.bin"), lang = lang)
+        disk = File(context.cacheDir, DictCache.diskName(lang)), lang = lang)
 
     fun replacements(lang: String = "ru"): Replacements =
         DictCache.replacements(langDictFiles(Dicts.Kind.REPLACE, lang), stress = langDictFiles(Dicts.Kind.STRESS, lang), lang = lang)

@@ -445,7 +445,7 @@ class SettingsActivity : AppCompatActivity() {
                 MaterialAlertDialogBuilder(this).setTitle(R.string.pack_delete_title).setMessage(getString(R.string.pack_delete_confirm, p.title))
                     .setPositiveButton(R.string.pack_delete) { _, _ ->
                         Packs.delete(filesDir, p.id)
-                        releaseModels()
+                        releaseModels(p.id)
                         // голос удалённого пака — на штатный; save фрагмента после этого его не вернёт (окно пересоздаётся).
                         // Пак ru в full (после lite) — те же голоса встроены: «ru/aidar» → «aidar», не на xenia.
                         val same = Speaker.builtin && p.id == Speaker.RU_PACK
@@ -469,7 +469,7 @@ class SettingsActivity : AppCompatActivity() {
             val result = runCatching {
                 contentResolver.openInputStream(uri)?.use { Packs.install(it, filesDir) } ?: throw IllegalStateException(getString(R.string.err_open_file))
             }
-            if (result.isSuccess) releaseModels()
+            result.onSuccess { releaseModels(it.id) }
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 progress.dismiss()
@@ -479,11 +479,12 @@ class SettingsActivity : AppCompatActivity() {
         }.start()
     }
 
-    /** Пак поставлен заново или удалён: модули прежней версии (тройка, акцентор) не должны жить дальше. release()
-     * под монитором дождётся текущего forward сервиса — поэтому не на главном потоке; следующий запрос загрузит заново. */
-    private fun releaseModels() {
+    /** Пак [id] поставлен заново или удалён: его модули прежней версии (тройка, акцентор) не должны жить дальше, чужие
+     * не трогаем (releasePack). release() под монитором дождётся текущего forward сервиса — поэтому не на главном потоке;
+     * следующий запрос загрузит заново. */
+    private fun releaseModels(id: String) {
         val ctx = applicationContext
-        Thread { SileroModels.shared(ctx).release() }.start()
+        Thread { SileroModels.shared(ctx).releasePack(id) }.start()
     }
 
     /** Списки голосов в фрагментах — lazy от установленных паков: пересоздаём окно, как после импорта

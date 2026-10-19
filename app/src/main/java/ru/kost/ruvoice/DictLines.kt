@@ -42,10 +42,10 @@ object DictLines {
         return Triple(all.indexOf(pos) + 1, all.size, word[pos].lowercaseChar())
     }
 
-    /** Границы русского слова (буквы и «+») вокруг позиции курсора в свободном тексте замены;
+    /** Границы русского или белорусского («і», «ў») слова (буквы и «+») вокруг позиции курсора в свободном тексте замены;
      * null, если курсор не касается слова. Курсор на границе прилипает к слову слева. */
     fun wordRangeAt(text: String, cursor: Int): IntRange? {
-        fun isW(i: Int) = i in text.indices && (text[i].lowercaseChar() in 'а'..'я' || text[i] == 'ё' || text[i] == '+')
+        fun isW(i: Int) = i in text.indices && (text[i].lowercaseChar() in 'а'..'я' || text[i] == 'ё' || text[i] == '+' || text[i].lowercaseChar() in "іў")
         var start = cursor.coerceIn(0, text.length)
         if (!isW(start) && !isW(start - 1)) return null
         while (isW(start - 1)) start--

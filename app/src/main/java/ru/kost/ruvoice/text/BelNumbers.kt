@@ -123,25 +123,51 @@ object BelNumbers {
     )
     /** Единицы женского рода: счётное слово согласуется с ними, а не наоборот. */
     private val FEM_UNITS = setOf("т", "шт", "кап", "тыс")
+    /** Единица после десятичной дроби — родительный единственного, как после дробных числительных: «1,5 кг» —
+     * «… кілаграма». Формы не проверены носителем. */
+    private val UNITS_FRAC = mapOf(
+        "км/г" to "кіламетра ў гадзіну", "км" to "кіламетра", "см" to "сантыметра", "мм" to "міліметра", "кг" to "кілаграма",
+        "мл" to "мілілітра", "мг" to "міліграма", "га" to "гектара", "м2" to "квадратнага метра", "м²" to "квадратнага метра",
+        "м" to "метра", "л" to "літра", "г" to "грама", "т" to "тоны", "шт" to "штукі", "°с" to "градуса цэльсія",
+        "%" to "працэнта", "руб" to "рубля", "кап" to "капейкі", "тыс" to "тысячы", "млн" to "мільёна", "млрд" to "мільярда",
+        "₽" to "рубля", "$" to "долара", "€" to "еўра")
 
-    /** «3 км» → «тры кіламетры», «5 %» → «пяць працэнтаў», «2 руб.» → «два рублі», «2 т» → «дзве тоны». */
+    /** «3 км» → «тры кіламетры», «5 %» → «пяць працэнтаў», «2 руб.» → «два рублі», «2 т» → «дзве тоны»;
+     * «1,5 кг» → «адзін коска пяць кілаграма» ([decimal]). */
     fun units(text: String): String = NUMBER_UNIT.replace(text) { m ->
         val raw = m.groupValues[1].replace("\u00A0", "").replace(" ", "")
         val n = raw.toLongOrNull() ?: return@replace m.value
-        val rest = m.groupValues[2].lowercase()
+        val rest = m.groupValues[3].lowercase()
         val u = UNITS[rest] ?: return@replace m.value
+        if (m.groupValues[2].isNotEmpty()) return@replace "${decimal(raw, m.groupValues[2])} ${UNITS_FRAC[rest] ?: u.third}"
         // единицы женского рода: «дзве тоны», «дзве капейкі», «дзве штукі», «дзве тысячы», а не «два»
         val num = if (rest in FEM_UNITS) BelNormalizer.cardinalFem(n) else BelNormalizer.cardinal(n)
         "$num ${plural(n, u.first, u.second, u.third)}"
     }
 
+    /** Десятичная дробь: «1,05» → «адзін коска нуль пяць». Нули в начале дробной части — словом каждый, иначе
+     * «1,05» звучало бы как «1,5». ponytail: разговорное «коска», а не «адна цэлая пяць сотых»; не проверено носителем. */
+    fun decimal(intRaw: String, fracRaw: String): String {
+        val rest = fracRaw.trimStart('0')
+        val frac = List(fracRaw.length - rest.length) { "нуль" } +
+            listOfNotNull(rest.takeIf { it.isNotEmpty() }?.let { r -> r.toLongOrNull()?.let { BelNormalizer.cardinal(it) } ?: BelNormalizer.digits(r) })
+        return (listOf(intRaw.toLongOrNull()?.let { BelNormalizer.cardinal(it) } ?: BelNormalizer.digits(intRaw), "коска") + frac).joinToString(" ")
+    }
+
     // ---- сокращения ----
 
-    /** «1999 г.» → «1999 год», «90-я гг.» → «90-я гады», «5 тыс.» уже разобрано единицами.
-     * «5 г.» — граммы (units): год — только 3–4 цифры ([YEAR_G]). */
+    /** «1999 г.» → «1999 год», «у 1812 г.» → «у 1812 годзе», «90-я гг.» → «90-я гады», «5 тыс.» уже разобрано единицами.
+     * «5 г.», «500 г. мукі» — граммы (units): год — 1000–2199 или 3–4 цифры после предлога ([YEAR_G]). */
     fun abbreviations(text: String): String {
         var s = text
-        s = YEAR_G.replace(s) { m -> m.groupValues[1] + " год" }
+        s = YEAR_G.replace(s) { m ->
+            val prep = m.groupValues[1]
+            val raw = m.groupValues[2]
+            if (prep.isEmpty() && (raw.length < 4 || raw.toInt() !in 1000..2199)) return@replace m.value
+            // падеж по предлогу: у/ў — месны, з/да/ад — родны, па — вінавальны; не проверено носителем
+            val word = when (prep.trim().lowercase()) { "у", "ў" -> "годзе"; "з", "да", "ад" -> "года"; else -> "год" }
+            "$prep$raw $word"
+        }
         s = GG.replace(s, "гады")
         return s
     }
@@ -162,14 +188,16 @@ object BelNumbers {
 
     /** С годом: «12.05.2026», «12/05/26»; не после цифры и знака — иначе кусок большого числа. */
     private val DATE = Regex("""(?<![\d.,])(\d{1,2})([./])(\d{1,2})\2(\d{4}|\d{2})(?!\d)""")
-    /** Без года: «3.09» — месяц двумя цифрами, не дробь «1.5» и не кусок «1.10.2». */
-    private val DAY_MONTH = Regex("""(?<![\d.,])(\d{1,2})\.(\d{2})(?!\d|[.,]\d)""")
+    // длинные варианты раньше коротких: иначе «5 тыс.» разобралось бы как «5 т» (тоны).
+    // Справа не буква: иначе «2026 год» — это «2026 г» (граммы) и «од», а «3 тамы» — «3 т» (тоны) и «амы».
+    private const val UNIT = """(км/г|тыс|млрд|млн|руб|кап|км|см|мм|кг|мл|мг|м2|м²|га|шт|°с|%|₽|\$|€|м|л|г|т)\.?(?![\p{L}])"""
+    /** Без года: «3.09» — месяц двумя цифрами, не дробь «1.5», не кусок «1.10.2» и не число с единицей «1.05 кг». */
+    private val DAY_MONTH = Regex("""(?<![\d.,])(\d{1,2})\.(\d{2})(?!\d|[.,]\d)(?!\s*$UNIT)""", RegexOption.IGNORE_CASE)
     private val TIME = Regex("""(?<!\d)(\d{1,2}):(\d{2})(?!\d)""")
-    private val YEAR_G = Regex("""(?<!\d)(\d{3,4})\s*г\.""")
+    private val YEAR_G = Regex("""(?:(?<!\p{L})((?:у|ў|з|да|па|ад)\s+))?(?<!\d)(\d{3,4})\s*г\.""", RegexOption.IGNORE_CASE)
     private val GG = Regex("""(?<!\p{L})гг\.?""", RegexOption.IGNORE_CASE)
+    /** Число, дробная часть через точку или запятую ([decimal]), единица [UNIT]. */
     private val NUMBER_UNIT = Regex(
-        // длинные варианты раньше коротких: иначе «5 тыс.» разобралось бы как «5 т» (тоны).
-        // Справа не буква: иначе «2026 год» — это «2026 г» (граммы) и «од», а «3 тамы» — «3 т» (тоны) и «амы».
-        """(?<![\d.,])(\d{1,9}(?:[ \u00A0]\d{3})*)\s*(км/г|тыс|млрд|млн|руб|кап|км|см|мм|кг|мл|мг|м2|м²|га|шт|°с|%|₽|\$|€|м|л|г|т)\.?(?![\p{L}])""",
+        """(?<![\d.,])(\d{1,9}(?:[ \u00A0]\d{3})*)(?:[.,](\d+))?\s*$UNIT""",
         RegexOption.IGNORE_CASE)
 }

@@ -71,6 +71,35 @@ class SpeakerTest {
         lite { assertEquals("ru/xenia", Speaker.defaultFor("ru", "cis_be/bel_larisa", "be", Speaker.names(d, listOf(ruPack, be)), listOf(ruPack, be))) }
         // голосов языка нет — выбранный
         assertEquals("kseniya", Speaker.defaultFor("be", "kseniya", "ru", Speaker.names(d, listOf(pack)), listOf(pack)))
+        // язык системы неизвестен (пустой systemLocales) — правило «язык системы» молчит, язык голоса — работает
+        assertEquals("kseniya", Speaker.defaultFor("ru", "kseniya", null, names, packs))
+        assertEquals("xenia", Speaker.defaultFor("ru", "cis_be/bel_larisa", null, names, packs))
+        assertEquals("cis_be/bel_anatoliy", Speaker.defaultFor("be", "kseniya", null, names, packs))
+    }
+
+    @Test fun profileFollowsOnlySameLanguage() {
+        val packs = listOf(pack, cisBe())
+        // TalkBack на LocaleSpan be попросил белорусский голос — профиль не переключаем, иначе русский текст дальше им
+        assertFalse(Speaker.followsProfile("cis_be/bel_larisa", "xenia", packs))
+        assertFalse(Speaker.followsProfile("xenia", "cis_be/bel_larisa", packs))
+        // читалка сменила голос того же языка — профиль, как раньше
+        assertTrue(Speaker.followsProfile("cis_ru/ru_marat", "xenia", packs))
+        assertTrue(Speaker.followsProfile("cis_be/bel_anatoliy", "cis_be/bel_larisa", packs))
+        assertTrue(Speaker.followsProfile("xenia", null, packs))
+    }
+
+    @Test fun defaultTakesPackDefaultBeforeAlphabet() {
+        // lite только с cis_be: голос по умолчанию пака, а не первый по алфавиту (aze_gamat)
+        lite {
+            assertEquals("cis_be/bel_larisa", Speaker.default(d, listOf(cisBe("bel_larisa")))!!.name)
+            assertEquals("cis_be/aze_gamat", Speaker.default(d, listOf(cisBe()))!!.name)
+            assertEquals("ru/xenia", Speaker.default(d, listOf(ruPack, cisBe("bel_larisa")))!!.name)
+            assertEquals("cis_be/bel_larisa", Speaker.defaultName(d.speakers.keys, listOf(cisBe("bel_larisa"))))
+            assertEquals("xenia", Speaker.defaultName(d.speakers.keys, listOf(ruPack)))
+        }
+        // full и русские паки без default — как было
+        assertEquals("xenia", Speaker.default(d, listOf(pack, cisBe("bel_larisa")))!!.name)
+        assertEquals(Speaker.DEFAULT, Speaker.defaultName(d.speakers.keys, listOf(cisBe("bel_larisa"))))
     }
 
     @Test fun voiceLanguageComesFromPack() {

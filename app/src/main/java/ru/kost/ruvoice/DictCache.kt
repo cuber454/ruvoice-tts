@@ -21,6 +21,9 @@ object DictCache {
 
     private fun sig(files: List<File>) = files.map { "${it.path}|${it.lastModified()}|${it.length()}" }
 
+    /** Файл разобранных ударений в cacheDir: у русского имя прежнее — кэш после обновления не пересобирается. */
+    fun diskName(lang: String) = if (lang == "ru") "userdict.bin" else "userdict-$lang.bin"
+
     // у ударений и замен свои замки: прогрев сервиса разбирает их параллельно
     private val stressLock = Any()
     private val replaceLock = Any()
@@ -89,11 +92,12 @@ object DictCache {
         return r.also { replaceSnaps[lang] = Snap(s, it) }
     }
 
-    /** Пересобрать снимок в фоне; колбэки зовутся из фонового потока. Возвращает поток —
+    /** Пересобрать снимок языка [lang] в фоне; колбэки зовутся из фонового потока. Возвращает поток —
      * тестам есть что join-ить, UI это не нужно. */
-    fun warm(files: List<File>, kind: Dicts.Kind, onProgress: (Int) -> Unit, onDone: () -> Unit, stressFiles: List<File> = emptyList()): Thread =
+    fun warm(files: List<File>, kind: Dicts.Kind, onProgress: (Int) -> Unit, onDone: () -> Unit, stressFiles: List<File> = emptyList(),
+             lang: String = "ru"): Thread =
         Thread {
-            try { if (kind == Dicts.Kind.STRESS) stress(files, onProgress) else replacements(files, onProgress, stressFiles) }
+            try { if (kind == Dicts.Kind.STRESS) stress(files, onProgress, lang = lang) else replacements(files, onProgress, stressFiles, lang) }
             catch (e: Exception) { /* битый файл — сервис получит то же исключение при синтезе, тут молчим */ }
             onDone()
         }.apply { start() }
