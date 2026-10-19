@@ -672,7 +672,9 @@ class SileroTtsService : TextToSpeechService() {
                             val fr = pauseFrames[seq[i].toInt()] ?: return@mapNotNull null
                             if (spoken[i - 1] in "–—" && spoken.substring(0, i - 1).trimEnd().lastOrNull()?.let { it in Marks.PUNCT } == true) null else i.toLong() to fr
                         }.toMap() + (if (endDot) mapOf((seq.size - 2).toLong() to 1L) else emptyMap()) + al.symbDurs
-                        SegOut.Model(models.synthesize(seq, curSpeakerId, sr, al.rates, al.pitches, typeIds, al.focus, symbDurs, voice.types), Marks.tokens(accented, sym))
+                        SegOut.Model(models.synthesize(seq, curSpeakerId, sr, al.rates, al.pitches, typeIds, al.focus, symbDurs, voice.types, dead), Marks.tokens(accented, sym))
+                    } catch (e: java.util.concurrent.CancellationException) {
+                        null // запрос перебили между мелом и бэкбоном
                     } catch (e: Throwable) {
                         // Throwable, не Exception: OOM на длинном forward не должен убивать сервис.
                         Log.e(SileroModels.TAG, "синтез не удался: «${seg.text.take(60)}»", e); null

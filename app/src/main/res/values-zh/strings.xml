@@ -291,7 +291,7 @@
         <item quantity="other">找到 %d 项</item>
     </plurals>
     <string name="rules_section_talkback">读屏（TalkBack）</string>
-    <string name="rules_section_talkback_hint">TalkBack 和其他读屏软件：三星和华为自带的读屏、解说（Jieshuo）、点明等，凡是用语音朗读手机界面的都算。书籍和阅读器不受这些设置影响。</string>
+    <string name="rules_section_talkback_hint">TalkBack 和其他读屏软件：三星和华为自带的读屏、解说（Jieshuo）、点明、Prudence、Talk Forward 等，凡是用语音朗读手机界面的都算。书籍和阅读器不受这些设置影响。</string>
     <string name="rule_sr_fast_start">快速出声</string>
     <string name="rule_sr_fast_start_hint">读屏语句的第一段不超过 100 个字符（在逗号处切开）：合成完这一段就开始发声，不必等整条消息。否则一条没有句号、带链接或表情符号的长聊天消息，开始前会有好几秒静音。书籍有自己的“书籍和应用中快速出声”规则，位于“其他”中。</string>
     <string name="rule_sr_symbols">用文字读出特殊符号</string>

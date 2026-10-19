@@ -290,7 +290,7 @@
         <item quantity="other">%d matches</item>
     </plurals>
     <string name="rules_section_talkback">Screen reading (TalkBack)</string>
-    <string name="rules_section_talkback_hint">TalkBack and other screen readers: Samsung, Huawei, Jieshuo, Dianming, anything that reads the phone screen aloud. These settings do not affect books and reader apps.</string>
+    <string name="rules_section_talkback_hint">TalkBack and other screen readers: Samsung, Huawei, Jieshuo, Dianming, Prudence, Talk Forward, anything that reads the phone screen aloud. These settings do not affect books and reader apps.</string>
     <string name="rule_sr_fast_start">Fast start</string>
     <string name="rule_sr_fast_start_hint">The first chunk of a screen reader phrase is at most 100 characters (cut at a comma), so the sound starts as soon as that chunk is synthesized, not the whole message. Otherwise a long chat message without periods, or with a link or emoji, means seconds of silence before it starts. Books have their own “Fast start in books and apps” rule in “Miscellaneous”.</string>
     <string name="rule_sr_symbols">Special symbols as words</string>

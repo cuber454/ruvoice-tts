@@ -66,12 +66,14 @@ class SileroModels(private val context: Context) : StressModels {
     private fun loadLite(pack: Pack?, name: String): Module =
         if (pack == null) LiteModuleLoader.loadModuleFromAsset(context.assets, "silero/$name") else LiteModuleLoader.load(File(pack.dir, name).path)
 
-    /** ExecuTorch грузит только с пути: ассет копируем в filesDir один раз (длина — признак той же версии),
-     * файл пака берём из его папки. */
+    /** ExecuTorch грузит только с пути: ассет копируем в filesDir после каждой установки APK, файл пака берём из его папки.
+     * Одной длины мало: у вокодера 1.0 (общий, ru_voices) она та же, что у штатного 17.09, и обновившиеся
+     * оставались со старым бэкбоном при новых head и tts_mel. */
     private fun loadBackbone(): org.pytorch.executorch.Module {
         val f = packDir?.let { File(it, "backbone.pte") } ?: File(context.filesDir, "backbone.pte").also { f ->
             val len = context.assets.openFd("silero/backbone.pte").use { it.length }
-            if (f.length() != len) context.assets.open("silero/backbone.pte").use { i -> f.outputStream().use { i.copyTo(it) } }
+            val installed = context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime
+            if (f.length() != len || f.lastModified() < installed) context.assets.open("silero/backbone.pte").use { i -> f.outputStream().use { i.copyTo(it) } }
         }
         return org.pytorch.executorch.Module.load(f.absolutePath, if (resident) org.pytorch.executorch.Module.LOAD_MODE_FILE else org.pytorch.executorch.Module.LOAD_MODE_MMAP, threads.takeIf { it > 0 } ?: fastCores)
     }
@@ -152,7 +154,7 @@ class SileroModels(private val context: Context) : StressModels {
      * длительность символа в кадрах (symb_durs: индекс в seq → кадры по 12.5 мс), паузы модели.
      */
     fun synthesize(seq: LongArray, speakerId: Int, sampleRate: Int, rates: FloatArray, pitches: FloatArray, typeIds: LongArray,
-                   focus: LongArray, symbDurs: Map<Long, Long>, types: Boolean = true): Synth {
+                   focus: LongArray, symbDurs: Map<Long, Long>, types: Boolean = true, cancelled: () -> Boolean = { false }): Synth {
         check(mel != null) { "модели не загружены" }   // ensureLoaded(pack) зовёт сервис — какой пак, знает только он
         val n = seq.size.toLong()
         val t = System.nanoTime()
@@ -175,6 +177,8 @@ class SileroModels(private val context: Context) : StressModels {
         }
         val out = mel!!.forward(*args.toTypedArray()).toTuple()
         val melT = out[0].toTensor()
+        // forward не прерывается: фразу, которую чтец уже перебил, хотя бы не досчитываем бэкбоном (около половины времени)
+        if (cancelled()) throw java.util.concurrent.CancellationException()
         val tb = System.nanoTime()
         val hid = backbone!!.forward(EValue.from(org.pytorch.executorch.Tensor.fromBlob(melT.dataAsFloatArray, melT.shape())))[0].toTensor()
         val th = System.nanoTime()

@@ -35,6 +35,16 @@ class SileroModelsTest {
         m.release(); assertFalse(m.isLoaded)
     }
 
+    /** Копия бэкбона от прошлой версии той же длины (обновление до 1.0) перекопируется из APK. */
+    @Test fun staleBackboneRecopied() {
+        val m = SileroModels(ctx); m.ensureLoaded(); m.release()
+        val f = java.io.File(ctx.filesDir, "backbone.pte")
+        assertTrue(f.setLastModified(1000L))
+        m.ensureLoaded(); m.release()
+        val installed = ctx.packageManager.getPackageInfo(ctx.packageName, 0).lastUpdateTime
+        assertTrue("mtime ${f.lastModified()} < $installed", f.lastModified() >= installed)
+    }
+
     @Test fun goldenStressMatches() {
         val m = SileroModels(ctx); m.ensureLoaded()
         val golden = JSONArray(testCtx.assets.open("golden.json").bufferedReader().readText())

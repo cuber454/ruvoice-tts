@@ -28,6 +28,8 @@ object ScreenReaders {
         "com.nirenr.talkman",                        // Jieshuo
         "com.nirenr.talkman.geek",                   // Jieshuo, международная сборка
         "com.dianming.phoneapp",                     // Dianming
+        "com.prudence.reader",                       // Prudence
+        "eu.appsuite.talkforward",                   // Talk Forward
     )
 
     /** Отправитель запроса: пакет, подпись и что решила автоматика. */

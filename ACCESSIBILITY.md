@@ -72,7 +72,7 @@ TextToSpeechService, TtsSpan и доступности View.
   (`TextToSpeechService`: `Binder.getCallingUid()` → `SynthesisRequest.getCallerUid()`); TalkBack говорит
   из своего процесса (`FailoverTextToSpeech`). Экранный чтец — пакет из списка известных
   (`com.google.android.marvin.talkback`, `com.android.talkback` — открытая сборка, Samsung, Huawei, Jieshuo,
-  Dianming) или любой пакет с включённой службой доступности с речевым откликом (`FEEDBACK_SPOKEN`).
+  Dianming, Prudence, Talk Forward) или любой пакет с включённой службой доступности с речевым откликом (`FEEDBACK_SPOKEN`).
   Службы видны движку через `<queries>` в манифесте. «Выбор для озвучивания» живёт в том же пакете,
   что TalkBack, — тоже считается чтецом.
 - [x] **Секция «Чтение с экрана»** в правилах (первая): быстрый старт (`sr_fast_start`, первый кусок фразы
