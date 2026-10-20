@@ -41,7 +41,7 @@ object SentenceType {
         if (tail.endsWith("?")) {
             val qq = normalize(tail)
             if (q.tagRe.containsMatchIn(qq)) return "tag_q"
-            if (hasWhPrefix(qq, q)) return "wh_q"
+            if (hasWhPrefix(q.notWhRe?.replace(qq.lowercase(), " ") ?: qq, q)) return "wh_q"
             if (q.altRe.containsMatchIn(qq.lowercase())) return "alternative_q"
             return "general_q"
         }

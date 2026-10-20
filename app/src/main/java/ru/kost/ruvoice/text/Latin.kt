@@ -72,6 +72,7 @@ object Latin {
         "login" to "л+огін",
         "password" to "пар+оль",
         "download" to "даўнл+оўд",
+        "covid" to "к+овід",          // не проверено носителем
     )
     /** Диграфы: длинные раньше коротких. */
     private val DIGRAPHS = listOf(
@@ -145,20 +146,29 @@ object Latin {
     }
 
     /** Все латинские вставки в тексте → белорусские буквы; остальное не трогаем. Вплотную к цифрам — через пробел, а одна
-     * буква — именем, как у русского «пять джи»: «5G» — «5 гэ», «S24» — «эс 24», «MP3» — «эм-пэ 3» (капс — по буквам и так);
-     * иначе число склеивалось с буквой, а «г», «м», «т» читались единицами («пяць грамаў»). */
+     * заглавная буква — именем, как у русского «пять джи»: «5G» — «5 гэ», «S24» — «эс 24», «MP3» — «эм-пэ 3» (капс — по буквам и так);
+     * иначе число склеивалось с буквой, а «г», «м», «т» читались единицами («пяць грамаў»). Слово через дефис сначала
+     * ищется в словаре целиком: «Wi-Fi» — «вайфай», а не «ўі-фі». */
     fun translate(text: String): String {
+        fun latin(k: Int) = k < text.length && text[k].code < 128 && text[k].isLetter()
         val out = StringBuilder(text.length + 8)
         var i = 0
         while (i < text.length) {
-            val isLatin = text[i].code < 128 && text[i].isLetter()
-            if (!isLatin) { out.append(text[i]); i++; continue }
+            if (!latin(i)) { out.append(text[i]); i++; continue }
             var j = i
-            while (j < text.length && text[j].code < 128 && text[j].isLetter()) j++
+            while (latin(j)) j++
+            if (j < text.length && text[j] == '-' && latin(j + 1)) {
+                var k = j + 1
+                while (latin(k)) k++
+                val whole = WORDS[(text.substring(i, j) + text.substring(j + 1, k)).lowercase()]
+                if (whole != null) { out.append(whole); i = k; continue }
+            }
             val digitBefore = i > 0 && text[i - 1].isDigit()
             val digitAfter = j < text.length && text[j].isDigit()
             if (digitBefore) out.append(' ')
-            out.append(if ((digitBefore || digitAfter) && j - i == 1) NAMES.getValue(text[i].lowercaseChar()) else word(text.substring(i, j)))
+            // строчные g, m, l, t — единицы, как были («5m», «500g», «2l»); заглавные («5G», «10T») и прочие («2x») — именем
+            val name = (digitBefore || digitAfter) && j - i == 1 && (text[i].isUpperCase() || text[i] !in "gmlt")
+            out.append(if (name) NAMES.getValue(text[i].lowercaseChar()) else word(text.substring(i, j)))
             if (digitAfter) out.append(' ')
             i = j
         }

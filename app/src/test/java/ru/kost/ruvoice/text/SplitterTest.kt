@@ -84,6 +84,15 @@ class SplitterTest {
         // русскому тексту не мешает: формы «вул» в морфологии AOT нет, «вулкан.» — конец предложения
         assertEquals(0, Morph.open(java.io.File(TestData.root(), "app/src/main/assets/morph.bin")).tags("вул"))
         assertEquals(listOf("Там был вулкан.", "Он спал."), Splitter.sentences("Там был вулкан. Он спал."))
+        // «г. зн.», «і інш.», «т. зв.» — тоже; «і», «ў» в классе букв сокращения русскому не мешают: в русском их нет,
+        // а «зн», «зв» словами AOT не бывают
+        assertEquals(listOf("Праз тыдзень, г. зн. у панядзелак."), Splitter.sentences("Праз тыдзень, г. зн. у панядзелак."))
+        assertEquals(listOf("Кнігі і інш. выданні."), Splitter.sentences("Кнігі і інш. выданні."))
+        assertEquals(listOf("Гэта т. зв. рэжым."), Splitter.sentences("Гэта т. зв. рэжым."))
+        val morph = Morph.open(java.io.File(TestData.root(), "app/src/main/assets/morph.bin"))
+        assertEquals(0, morph.tags("зн")); assertEquals(0, morph.tags("зв"))
+        assertEquals(listOf("Он знал.", "Она звала."), Splitter.sentences("Он знал. Она звала."))
+        assertEquals(listOf("Смотри стр. 5 и рис. 2.", "Дальше."), Splitter.sentences("Смотри стр. 5 и рис. 2. Дальше."))
     }
 
     @Test fun okIsNotAnAbbreviationStopWord() {

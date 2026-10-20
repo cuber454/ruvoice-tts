@@ -218,7 +218,8 @@ object BelNormalizer {
         s = DECIMAL_RE.replace(s) { m -> BelNumbers.decimal(m.groupValues[1].filter { it.isDigit() }, m.groupValues[2]) }
         s = DIGIT_GROUP_RE.replace(s) { m ->
             val raw = m.value.filter { it.isDigit() }
-            raw.toLongOrNull()?.let { cardinal(it) } ?: digits(raw)
+            // нуль в начале трёх и больше цифр — код («8-029-123», «007»): читаем, как в телефоне ([group]); «05» — месяц, минуты
+            if (raw.length > 2 && raw[0] == '0') group(raw) else raw.toLongOrNull()?.let { cardinal(it) } ?: digits(raw)
         }
         return s
     }
@@ -246,6 +247,8 @@ object BelNormalizer {
     val APOSTROPHE = Regex("[’'`´ʼ‘]")
     /** Градусы Цельсия латинской или кириллической «C» — к одной записи «°с» (кириллица). */
     private val CELSIUS_RE = Regex("°\\s*[CcСс](?!\\p{L})")
+    /** Код белорусского рубля после числа — единица «руб» ([BelNumbers.units]); без числа — как было, по буквам. */
+    private val BYN_RE = Regex("(?<=\\d)\\s*BYN(?![A-Za-z])", RegexOption.IGNORE_CASE)
     private val COMMA_RUN_RE = Regex(",(?:\\s*,)+")
     // и после тире: «— «Так», —» и «— (ціха) Так» не дают «—, так»
     private val COMMA_EDGE_RE = Regex("^[\\s,]+|(?<=[:;.?…—])\\s*,|\\s*,(?=\\s*(?:[.?…;:]|$))")
@@ -258,14 +261,21 @@ object BelNormalizer {
         """(?:км/г|тыс|млрд|млн|руб|кап|км|см|мм|кг|мл|мг|га|шт|гг|(?<!\.\d\d[ \x{A0}]?)г|м|л|т)""" +
         // только там, где [WORD_ABBR] их развернёт: иначе точка осталась бы двойной
         """|(?<=(?<!\p{L})і\s{1,3}г\.\s{0,3})д|(?<=(?<!\p{L})і\s{1,3})інш)\.(?=\s+\p{Lu}|\s*$)""")
-    /** Сокращения словами; «вуліцы» после «на/па» (месны), «і іншае» — не проверено носителем. */
+    /** Начало фразы до «г.»/«гг.»: предлог и год (или два года) — «У 1941 », «З 1941–1945 ». Не «Нарадзіўся ў 1990 г. Яго…»:
+     * там слова перед предлогом, и это конец предложения. */
+    private val YEAR_LEAD_RE = Regex("""\P{L}*(?:у|ў|з|да|ад|па|пасля|каля|перад)\s+\d{4}(?:\s*[–—-]\s*\d{4})?[ \x{A0}]?""",
+        RegexOption.IGNORE_CASE)
+    /** Сокращения словами; «вуліцы» после «на/па» (месны) и предлогов родительного, «вуліцу» после «праз», «і іншае»,
+     * «так званы» (род не согласуем) — не проверено носителем. Пробел в конце замены: «напр.Мінск» — не «напрыкладмінск». */
     private val WORD_ABBR = listOf(
-        Regex("""(?<!\p{L})і\s+г\.\s*д\.""") to "і гэтак далей",
-        Regex("""(?<!\p{L})г\.\s*зн\.""") to "гэта значыць",
-        Regex("""(?<!\p{L})і\s+інш\.""") to "і іншае",
-        Regex("""(?<!\p{L})напр\.""") to "напрыклад",
-        Regex("""(?<!\p{L})(на|па)\s+вул\.""") to "$1 вуліцы",
-        Regex("""(?<!\p{L})вул\.""") to "вуліца")
+        Regex("""(?<!\p{L})і\s+г\.\s*д\.""") to "і гэтак далей ",
+        Regex("""(?<!\p{L})г\.\s*зн\.""") to "гэта значыць ",
+        Regex("""(?<!\p{L})і\s+інш\.""") to "і іншае ",
+        Regex("""(?<!\p{L})т(?:\.|ак)\s*зв\.""") to "так званы ",
+        Regex("""(?<!\p{L})напр\.""") to "напрыклад ",
+        Regex("""(?<!\p{L})(на|па|з|са|ад|да|каля|ля|для|без|уздоўж|насупраць|вакол|пасля)\s+вул\.""") to "$1 вуліцы ",
+        Regex("""(?<!\p{L})праз\s+вул\.""") to "праз вуліцу ",
+        Regex("""(?<!\p{L})вул\.""") to "вуліца ")
     /** Смесь «?!» (Normalizer.punctuation сводит к ней «!?», «?!?») — вопрос, как у русского cis: «!» туда не доходит. */
     private val QUEST_EXCL_RE = Regex("\\?!|!\\?")
     /** Скобки — пауза запятой (pause_parens, как у русского); кавычки — без паузы, их выкидывает фильтр. */
@@ -277,17 +287,23 @@ object BelNormalizer {
         s = OTHER_DIGIT_RE.replace(s) { Character.digit(it.value.codePointAt(0), 10).toString() }
         // «°C» латиницей — до Latin, иначе она делает из «C» «к» и единица не находится
         s = CELSIUS_RE.replace(s, "°с")
+        s = BYN_RE.replace(s, " руб")                 // «1,20 BYN» — рубли единицей, а не «бэ-уай-эн»; тоже до Latin
         s = BelNumbers.roman(s)                       // «XX стагоддзе» — до Latin, иначе «экс-экс»
         // латиницы в таблице символов модели нет вовсе — «FilmBell» раньше просто выпадало
         // точка сокращения в конце предложения — после латиницы («5kg.» — уже «5 кг.»), но до lowercase
-        s = ABBR_END_RE.replace(Latin.translate(s), "$0 .").lowercase()
+        val lat = Latin.translate(s)
+        s = ABBR_END_RE.replace(lat) { m ->
+            // «У 1941 г. Германія…»: перед годом только предлог — середина предложения, не конец
+            val mid = m.value.startsWith("г") && lat.substring(m.range.last + 1).isNotBlank() && YEAR_LEAD_RE.matches(lat.substring(0, m.range.first))
+            if (mid) m.value else m.value + " ."
+        }.lowercase()
         s = s.replace(APOSTROPHE, "")
         for ((re, rep) in WORD_ABBR) s = re.replace(s, rep)    // до «г.» — «горад» и до года
         s = MINUS_NUMBER_RE.replace(PLUS_NUMBER_RE.replace(s, " плюс "), " мінус ")
         s = phones(s)
-        // даты и время — до единиц: у них внутри цифры со знаками (12.05.2026, 21:30)
-        s = BelNumbers.dates(s)
+        // даты и время — до единиц: у них внутри цифры со знаками (12.05.2026, 21:30); время раньше: «а 10.05» — не дата
         s = BelNumbers.times(s)
+        s = BelNumbers.dates(s)
         s = BelNumbers.ordinals(s)                    // «1-га верасня», «5-ы клас», «1990-я»
         s = BelNumbers.abbreviations(s)               // «1999 г.» → «1999 год»
         s = BelNumbers.units(s)                       // «3 км» → «тры кіламетры»

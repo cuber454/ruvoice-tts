@@ -122,6 +122,19 @@ class LayersTest {
         assertEquals("tag_q", SentenceType.classify("Ты прыйдзеш, так жа?", q))
         // русский союз остаётся у русского
         assertEquals("alternative_q", SentenceType.classify("Чай или кофе?", RuLayer.questions(TestData.data())))
+        // «калі ласка» — не вопросительное слово; «ці» в начале (и после вводных) — общий вопрос, «што» дальше — придаточное
+        assertEquals("general_q", SentenceType.classify("Ці прыйдзеш, калі ласка?", q))
+        assertEquals("general_q", SentenceType.classify("Ты прыйдзеш, калі ласка?", q))
+        assertEquals("general_q", SentenceType.classify("Калі ласка, ці можаце вы дапамагчы?", q))
+        assertEquals("general_q", SentenceType.classify("Ці ведаеш ты, што заўтра свята?", q))
+        assertEquals("general_q", SentenceType.classify("А ці ведаеш?", q))
+        assertEquals("general_q", SentenceType.classify("Ну ці прыйдзеш?", q))
+        assertEquals("general_q", SentenceType.classify("— Ну а ці прыйдзеш?", q))
+        assertEquals("wh_q", SentenceType.classify("Скажыце, калі ласка, як прайсці да вакзала?", q))
+        assertEquals("wh_q", SentenceType.classify("Калі ты прыйдзеш?", q))
+        // альтернатива после начального «ці» и «так ці не» — по-прежнему альтернатива
+        assertEquals("alternative_q", SentenceType.classify("Ці будзеш чай ці каву?", q))
+        assertEquals("alternative_q", SentenceType.classify("Так ці не?", q))
     }
 
     @Test fun belLetterNames() {
