@@ -92,7 +92,7 @@ object BelNumbers {
         val s = TIME.replace(text) { m -> time(m.groupValues[1], m.groupValues[2]) ?: m.value }
         return TIME_DOT.replace(s) { m ->
             val p = m.groupValues[1].lowercase()
-            // «з/да/па…» перед «дд.мм» с месяцем 01–12 — скорее дата («з 12.05 па 15.05»); «а», «у», «ў» — всегда время
+            // «з/да…» перед «дд.мм» с месяцем 01–12 — скорее дата («з 12.05 па 15.05»); «а», «у», «ў» — всегда время
             if (p != "а" && p != "у" && p != "ў" && m.groupValues[4].toInt() in 1..12) return@replace m.value
             time(m.groupValues[3], m.groupValues[4])?.let { m.groupValues[1] + m.groupValues[2] + it } ?: m.value
         }
@@ -141,6 +141,7 @@ object BelNumbers {
         "тыс" to Triple("тысяча", "тысячы", "тысяч"),
         "млн" to Triple("мільён", "мільёны", "мільёнаў"),
         "млрд" to Triple("мільярд", "мільярды", "мільярдаў"),
+        "трлн" to Triple("трыльён", "трыльёны", "трыльёнаў"),     // не проверено носителем
         "₽" to Triple("рубель", "рублі", "рублёў"),
         "$" to Triple("долар", "долары", "долараў"),
         "€" to Triple("еўра", "еўра", "еўра"),
@@ -154,12 +155,12 @@ object BelNumbers {
         "мл" to "мілілітра", "мг" to "міліграма", "га" to "гектара", "м2" to "квадратнага метра", "м²" to "квадратнага метра",
         "м" to "метра", "л" to "літра", "г" to "грама", "т" to "тоны", "шт" to "штукі", "°с" to "градуса цэльсія",
         "%" to "працэнта", "руб" to "рубля", "кап" to "капейкі", "тыс" to "тысячы", "млн" to "мільёна", "млрд" to "мільярда",
-        "₽" to "рубля", "$" to "долара", "€" to "еўра")
+        "трлн" to "трыльёна", "₽" to "рубля", "$" to "долара", "€" to "еўра")
 
     /** «3 км» → «тры кіламетры», «5 %» → «пяць працэнтаў», «2 руб.» → «два рублі», «2 т» → «дзве тоны»;
      * «1,5 кг» → «адзін коска пяць кілаграма» ([decimal]). Валюта перед числом — как после: «$65 000» → «… долараў».
      * Единица после «тыс.», «млн», «млрд» — родны мн.: «1,2 тыс. км» → «… тысячы кіламетраў». */
-    fun units(text: String): String = MULT_UNIT.replace(NUMBER_UNIT.replace(CURRENCY_BEFORE.replace(text, "$2 $1")) { m ->
+    fun units(text: String): String = MULT_UNIT.replace(NUMBER_UNIT.replace(CURRENCY_BEFORE.replace(text, " $2 $1")) { m ->
         val raw = m.groupValues[1].replace("\u00A0", "").replace(" ", "")
         val n = raw.toLongOrNull() ?: return@replace m.value
         val rest = m.groupValues[3].lowercase()
@@ -181,15 +182,15 @@ object BelNumbers {
      * «тысяча дзевяцьсот дзевяностыя». Форма — по концу суффикса: «-га» родны (м./н.), «-ы/-і» (-гі, -ці, -шы) назоўны
      * м., «-м» месны/творны м.; у десятилетия (10–90 и четырёхзначное на 0) «-я» — назоўны мн. («васьмідзясятыя»), «-х» —
      * родны/месны мн. («у 1990-х» → «у тысяча дзевяцьсот дзевяностых»). С «-я» десятилетие без «гады»/«гг.» за ним —
-     * только четырёхзначное не на круглую тысячу: «10-я кніга» не трогаем, круглая тысяча — ж. р. («1000-я старонка» →
-     * «тысячная»). «2-х»…«4-х» — количественное: «двух», «трох», «чатырох» (род не знаем, «дзвюх» не бывает). «-й» —
-     * русский суффикс: число без него («2-й» → «два»). Прочее («5-я» — «пятая»?, «5-х») не трогаем. Не проверено носителем. */
+     * только четырёхзначное, кроме 1000: «10-я кніга» не трогаем, «у 2000-я» — «двухтысячныя», 1000 — ж. р. («1000-я
+     * старонка» → «тысячная»). «2-х»…«4-х» — количественное: «двух», «трох», «чатырох» (род не знаем, «дзвюх» не
+     * бывает). «-й» — русский суффикс: число без него («2-й» → «два»). Прочее («5-я» — «пятая»?, «5-х») не трогаем. Не проверено носителем. */
     fun ordinals(text: String): String = ORD_SUFFIX.replace(text) { m ->
         val raw = m.groupValues[1]
         val n = raw.toLongOrNull() ?: return@replace m.value
         val sfx = m.groupValues[2].lowercase()
         val decade = n % 10 == 0L && (raw.length == 2 || raw.length == 4)
-        val thousand = raw.length == 4 && n % 1000 == 0L
+        val thousand = n == 1000L
         when {
             sfx.endsWith("га") -> BelNormalizer.ordinal(n, BelNormalizer.Form.GEN)
             sfx.endsWith("м") -> BelNormalizer.ordinal(n, BelNormalizer.Form.LOC)
@@ -224,39 +225,61 @@ object BelNumbers {
             }
             "$word $noun"
         }
-        s = ROMAN_ST.replace(s) { m ->
-            val nums = listOf(m.groupValues[2], m.groupValues[3]).filter { it.isNotEmpty() }
+        val st = s
+        s = ROMAN_ST.replace(st) { m ->
+            val nums = listOf(m.groupValues[2], m.groupValues[4]).filter { it.isNotEmpty() }
             if (nums == listOf("І")) return@replace m.value
-            val form = when (m.groupValues[1].trim().lowercase()) {
+            // без предлога I–IV — скорее ступень («ордэн … II ст.», «Дыплом I ст.»): не трогаем
+            if (m.groupValues[1].isEmpty() && nums.all { romanValue(it) <= 4 }) return@replace m.value
+            // «ад XV да XVII ст.» — оба родным, «стагоддзя» адно
+            val upTo = m.groupValues[3].trim().lowercase() == "да"
+            val form = if (upTo) BelNormalizer.Form.GEN else when (m.groupValues[1].trim().lowercase()) {
                 "у", "ў" -> BelNormalizer.Form.LOC
                 "з", "да", "ад" -> BelNormalizer.Form.GEN
                 else -> null
             }
-            val many = nums.size > 1 || m.groupValues[4].length > 2
+            val many = nums.size > 1 && !upTo || m.groupValues[5].length > 2
             val noun = when (form) {
                 BelNormalizer.Form.LOC -> if (many) "стагоддзях" else "стагоддзі"
                 BelNormalizer.Form.GEN -> if (many) "стагоддзяў" else "стагоддзя"
                 else -> if (many) "стагоддзі" else "стагоддзе"
             }
-            // точка сокращения в конце предложения остаётся, как у [BelNormalizer] ABBR_END_RE
-            m.groupValues[1] + nums.joinToString(" — ") { r -> romanValue(r).let { if (form == null) neuter(it) else BelNormalizer.ordinal(it, form) } } +
-                " " + noun + (if (m.groups[5] != null) " ." else "")
+            // точка сокращения в конце предложения остаётся, как у [BelNormalizer] ABBR_END_RE; перед заглавной после
+            // одного предлога в начале фразы («У XX ст. Беларусь…») — середина, как «У 1941 г. Германія»
+            val mid = m.groupValues[1].isNotEmpty() && m.groupValues[6].isNotBlank() &&
+                st.substring(0, m.range.first).none(Char::isLetter)
+            m.groupValues[1] + nums.joinToString(if (upTo) " да " else " — ") { r ->
+                romanValue(r).let { if (form == null) neuter(it) else BelNormalizer.ordinal(it, form) }
+            } + " " + noun + (if (m.groups[6] != null && !mid) " ." else "")
         }
-        // ponytail: род по последней букве имени (-а/-я — ж., согласная — м., прочее не трогаем): «Elizabeth II» — «другі»;
-        // одна буква (I, V, X) — только после кириллического имени: «Then I», «Model X», «Malcolm X» не трогаем
+        // ponytail: род по имени: ж. р. — только [FEM_NAMES] (и латиница на «a»), прочее на -а/-я — родны м. р. («Указ
+        // Пятра I» — «першага»), согласная — назоўны м. р. («Elizabeth II» — «другі»), прочее не трогаем. Предлог в начале
+        // фразы («Пасля II сусветнай») — не имя. Одна буква — только I/І после кириллического имени и не перед точкой:
+        // «Шамякін І. П.» — инициал, «Дзень Х», «Літара V», «Then I», «Model X» не трогаем; «І» перед словом — союз
+        // («Мінск І Гомель»)
         return ROMAN_NAME.replace(s) { m ->
             val name = m.groupValues[1]
             val r = m.groupValues[2]
-            if (r.length == 1 && name.last().code < 128) return@replace m.value
+            val next = m.groupValues[3]
+            if (name in NOT_NAMES) return@replace m.value
+            if (r.length == 1 && (r[0] !in "IІ" || name.last().code < 128 || next == "." || r == "І" && next.isNotEmpty()))
+                return@replace m.value
             val last = name.last().lowercaseChar()
-            val word = when (last) {
-                'а', 'я', 'a' -> gender(romanValue(r), "ая", FEMININE)
-                in "еёіоуыэюeiouy" -> return@replace m.value
+            val word = when {
+                name.replace(BelNormalizer.APOSTROPHE, "'") in FEM_NAMES || last == 'a' -> gender(romanValue(r), "ая", FEMININE)
+                last == 'а' || last == 'я' -> BelNormalizer.ordinal(romanValue(r), BelNormalizer.Form.GEN)
+                last in "еёіоуыэюeiouy" -> return@replace m.value
                 else -> BelNormalizer.ordinal(romanValue(r))
             }
             "$name $word"
         }
     }
+    /** Женские имена (назоўны) перед римским; «Частка», «Кніга», «Глава» — не имена, но в книгах так нумеруют. Список и
+     * формы не проверены носителем. */
+    private val FEM_NAMES = setOf("Кацярына", "Лізавета", "Елізавета", "Ганна", "Марыя", "Ядвіга", "Бона", "Софія", "Соф'я",
+        "Частка", "Кніга", "Глава")
+    /** Предлоги с заглавной в начале фразы — не имя перед римским; однобуквенные «У», «З» [ROMAN_NAME] и так не ловит. */
+    private val NOT_NAMES = setOf("Пасля", "Да", "Ад", "Падчас", "На", "За", "Пры", "Пра", "Па", "Каля", "Для", "Без", "Праз")
 
     private fun romanValue(r: String): Long {
         var n = 0; var prev = 0
@@ -310,9 +333,12 @@ object BelNumbers {
             }
             "${m.groupValues[1]}${BelNormalizer.ordinal(y1, form)} — ${BelNormalizer.ordinal(y2, form)} $word"
         }
+        s = GG_LOC.replace(s, "$1гадах")
         s = GG.replace(s, "гады")
         return s
     }
+    /** «у 1990-х гг.» — [ordinals] уже дали «у … дзевяностых»: месны, «гадах»; не проверено носителем. */
+    private val GG_LOC = Regex("""(?<!\p{L})([уў]\s+(?:\p{L}+\s+){0,3}\p{L}+ых\s+)гг\.?""", RegexOption.IGNORE_CASE)
 
     /** Сокращение без числа: «руб.» после «5 тыс.» или «г.» перед названием города. Только отдельным словом:
      * «капуста», «рубель» и уже развёрнутое единицами «два рублі» не трогаем. */
@@ -347,31 +373,42 @@ object BelNumbers {
     private const val ROMAN_NUM = """(?=[IVXІХ])[XХ]{0,3}(?:[IІ][XХ]|[IІ]V|V?[IІ]{0,3})"""
     /** Римское перед «стагоддзе», «век» ([roman]), не часть слова. */
     private val ROMAN = Regex("""(?<![\p{L}\d])($ROMAN_NUM)\s+([Сс]тагоддз(?:е|я|і|ем)|[Вв](?:ек|ека|еку|еце|екам))(?!\p{L})""")
-    /** «у XX ст.», «XIX–XX стст.»: предлог, одно или два римских, «ст»/«стст»; пятая группа — за точкой конец предложения. */
-    private val ROMAN_ST = Regex("""(?:(?<!\p{L})((?:[Уу]|[Ўў]|[Зз]|[Дд]а|[Аа]д)\s+))?(?<![\p{L}\d])($ROMAN_NUM)(?:\s*[–—-]\s*($ROMAN_NUM))?""" +
+    /** «у XX ст.», «XIX–XX стст.», «ад XV да XVII ст.»: предлог, одно или два римских (третья группа — тире или «да»),
+     * «ст»/«стст»; шестая группа — за точкой конец предложения или заглавная. */
+    private val ROMAN_ST = Regex("""(?:(?<!\p{L})((?:[Уу]|[Ўў]|[Зз]|[Дд]а|[Аа]д)\s+))?(?<![\p{L}\d])($ROMAN_NUM)(?:(\s*[–—-]\s*|\s+[Дд]а\s+)($ROMAN_NUM))?""" +
         """\s+(стст|ст)\.(?=(\s*$|\s+\p{Lu})?)""")
-    /** Римское после слова с заглавной: «Пётр I», «Кацярына II», «Карл XII». Слово — заглавная и строчные: «ЯНКА І» не имя. */
-    private val ROMAN_NAME = Regex("""(?<![\p{L}\d])(\p{Lu}\p{Ll}+)\s+($ROMAN_NUM)(?![\p{L}\d])""")
+    /** Римское после слова с заглавной: «Пётр I», «Кацярына II», «Карл XII». Слово — заглавная и строчные (и апостроф:
+     * «Соф'я»): «ЯНКА І» не имя. Не перед «ст.» («Дыплом I ст.» — ступень, [ROMAN_ST]); третья группа — точка или слово
+     * за ним. */
+    private val ROMAN_NAME = Regex("""(?<![\p{L}\d])(\p{Lu}(?:['’]?\p{Ll})+)\s+($ROMAN_NUM)(?![\p{L}\d]|\s+(?:стст|ст)\.)(?=(\.|\s+\p{L})?)""")
     // длинные варианты раньше коротких: иначе «5 тыс.» разобралось бы как «5 т» (тоны).
     // Справа не буква: иначе «2026 год» — это «2026 г» (граммы) и «од», а «3 тамы» — «3 т» (тоны) и «амы».
     // Точку съедаем только у сокращений: за знаком («5 %.», «$65 000.») она — конец предложения.
-    private const val UNIT = """(км/г|тыс|млрд|млн|руб|кап|км|см|мм|кг|мл|мг|м2|м²|га|шт|°с|%|₽|\$|€|м|л|г|т)(?:(?<![%₽€\$]|°с)\.)?(?![\p{L}])"""
+    private const val UNIT = """(км/г|тыс|млрд|млн|трлн|руб|кап|км|см|мм|кг|мл|мг|м2|м²|га|шт|°с|%|₽|\$|€|м|л|г|т)(?:(?<![%₽€\$]|°с)\.)?(?![\p{L}])"""
     /** Без года: «3.09» — месяц двумя цифрами, не дробь «1.5», не кусок «1.10.2» и не число с единицей «1.05 кг».
      * «г.» после «дд.мм» — горад, а не граммы: «15.06 г. Гомель». */
     private val DAY_MONTH = Regex("""(?<![\d.,])$PA(\d{1,2})\.(\d{2})(?!\d|[.,]\d)(?!\s*(?!г\.)$UNIT)""", RegexOption.IGNORE_CASE)
     private val TIME = Regex("""(?<!\d)(\d{1,2}):(\d{2})(?!\d)""")
-    /** «чч.мм» после предлога ([times]); не кусок даты «у 12.05.2026» и не число с единицей «па 2.50 руб.». */
-    private val TIME_DOT = Regex("""(?<!\p{L})(а|у|ў|з|да|па|ад|каля|пасля|перад)(\s+)(\d{1,2})\.(\d{2})(?!\d|[.,]\d)(?!\s*(?!г\.)$UNIT)""",
+    /** «чч.мм» после предлога ([times]); не кусок даты «у 12.05.2026» и не число с единицей «1.50 руб.», «ў 1.25 раза»,
+     * «каля 1.30 мільёна». «па» с числом — чаще цена («па 2.50 за кілаграм»), время — только сразу за другим
+     * («з 15.30 па 16.30»). */
+    private val TIME_DOT = Regex("""(?<!\p{L})(а|у|ў|з|да|ад|каля|пасля|перад|(?<=\d[.:]\d\d\s{1,3})па)(\s+)(\d{1,2})\.(\d{2})""" +
+        """(?!\d|[.,]\d)(?!\s*(?!г\.)$UNIT)(?!\s*(?:раз|мільён|мільярд|трыльён|тысяч|метр|сантыметр|міліметр|грам|кіла|літр|тон|рубл|капе|долар|еўра|працэнт|градус|гектар|штук))""",
         RegexOption.IGNORE_CASE)
     private val YEAR_G = Regex("""(?:(?<!\p{L})((?:у|ў|з|да|па|ад)\s+))?(?<!\d)(\d{3,4})\s*г\.""", RegexOption.IGNORE_CASE)
     /** «у 1941–1945 гг.», «1941-1945 гадах» ([abbreviations]). «гадоў» нет: «1000–2000 гадоў» — количество. */
     private val YEARS_RANGE = Regex("""(?:(?<!\p{L})((?:у|ў|з|да|ад)\s+))?(?<![\d.,])(\d{4})\s*[–—-]\s*(\d{4})\s*(гг\.?|гадах|гады)(?!\p{L})""",
         RegexOption.IGNORE_CASE)
-    /** Единица за развёрнутым «тыс.», «млн», «млрд» ([units]): «тысячы км.» — точку сокращения съедает, как у числа. */
-    private val MULT_UNIT = Regex("""(?<!\p{L})(тысяч[аы]?|мільён(?:а|ы|аў)?|мільярд(?:а|ы|аў)?)\s+$UNIT""", RegexOption.IGNORE_CASE)
-    /** Валюта перед числом: «$65 000», «€ 50» → «65 000 $» для [units], с множителем — за ним: «$75,3 млрд.» →
-     * «75,3 млрд. $»; не «10 $ 20». */
-    private val CURRENCY_BEFORE = Regex("""(?<!\d\s?)([€₽\$])\s*(\d{1,9}(?:[  ]\d{3})*(?:[.,]\d+)?(?:\s*(?:тыс|млн|млрд)\.?(?!\p{L}))?)(?![\d.,]?\d)""")
+    /** Множитель словом: «тысяча», «мільёнаў», «трыльёны». */
+    private const val MULT_WORD = """тысяч[аы]?|мільён(?:а|ы|аў)?|мільярд(?:а|ы|аў)?|трыльён(?:а|ы|аў)?"""
+    /** Единица за развёрнутым «тыс.», «млн», «млрд», «трлн» ([units]): «тысячы км.» — точку сокращения съедает, как у числа. */
+    private val MULT_UNIT = Regex("""(?<!\p{L})($MULT_WORD)\s+$UNIT""", RegexOption.IGNORE_CASE)
+    /** Валюта перед числом: «$65 000», «€ 50» → «65 000 $» для [units]; с множителем (и словом) — за ним: «$75,3 млрд.» →
+     * «75,3 млрд. $», «$70 мільярдаў» → «70 мільярдаў $»; у диапазона — в конце: «$17-18 млрд» → «17-18 млрд $»; не
+     * «10 $ 20». Замена с пробелом впереди: «US$5» — не «у-эспяць». */
+    private val CURRENCY_BEFORE = Regex("""(?<!\d\s?)([€₽\$])\s*($CUR_NUM(?:\s*[-–—]\s*$CUR_NUM)?""" +
+        """(?:\s*(?:тыс|млн|млрд|трлн)\.?(?!\p{L})|\s+(?:$MULT_WORD)(?!\p{L}))?)(?![\d.,]?\d)""")
+    private const val CUR_NUM = """\d{1,9}(?:[  ]\d{3})*(?:[.,]\d+)?"""
     private val GG = Regex("""(?<!\p{L})гг\.?""", RegexOption.IGNORE_CASE)
     /** Число, дробная часть через точку или запятую ([decimal]), единица [UNIT]. */
     private val NUMBER_UNIT = Regex(

@@ -93,6 +93,11 @@ class SplitterTest {
         assertEquals(0, morph.tags("зн")); assertEquals(0, morph.tags("зв"))
         assertEquals(listOf("Он знал.", "Она звала."), Splitter.sentences("Он знал. Она звала."))
         assertEquals(listOf("Смотри стр. 5 и рис. 2.", "Дальше."), Splitter.sentences("Смотри стр. 5 и рис. 2. Дальше."))
+        // «зн», «інш», «зв» — только строчными: русские «Зв.» (зиверт) и «ЗВ.» — конец предложения
+        assertEquals(listOf("Пороговая доза примерно 0,25 Зв.", "Порог толерантности индивидуален."),
+            Splitter.sentences("Пороговая доза примерно 0,25 Зв. Порог толерантности индивидуален."))
+        assertEquals(listOf("Как Дисней поглумится над вселенной ЗВ.", "Интересно, как?"),
+            Splitter.sentences("Как Дисней поглумится над вселенной ЗВ. Интересно, как?"))
     }
 
     @Test fun okIsNotAnAbbreviationStopWord() {

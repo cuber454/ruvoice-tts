@@ -135,6 +135,12 @@ class LayersTest {
         // альтернатива после начального «ці» и «так ці не» — по-прежнему альтернатива
         assertEquals("alternative_q", SentenceType.classify("Ці будзеш чай ці каву?", q))
         assertEquals("alternative_q", SentenceType.classify("Так ці не?", q))
+        assertEquals("alternative_q", SentenceType.classify("Проста ці складана?", q))
+    }
+
+    @Test fun belNotWhLongFillersNoStackOverflow() {
+        // повтор вводных перед «ці» — притяжательный: на JVM без него StackOverflowError
+        assertEquals(" ", BeLayer.questions(TestData.data()).notWhRe!!.replace("ну ".repeat(5000) + "ці?", " "))
     }
 
     @Test fun belLetterNames() {
