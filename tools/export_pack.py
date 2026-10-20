@@ -2,8 +2,10 @@
 dist/ruvoice-pack-<id>.zip (pack.json + tts_mel.ptl + backbone.pte + head.ptl); для cis_ru ещё
 app/src/test/resources/golden_pack.json (pack.json и ids golden-фразы для JVM-теста).
 Пак не на русском (LANGS) несёт ещё accentor.ptl — акцентор своего языка — и stress.txt, поправки ударений
-«слово сл+ово» из exceptions того же акцентора; --stress подменяет stress.txt своим файлом (и у русских паков).
-Запуск: ../venv-et/bin/python tools/export_pack.py cis_ru | ru | cis_be [--stress путь]
+«слово сл+ово»: слова, где lite-акцентор ошибается, из exceptions того же акцентора (MIT) и, с --grammardb, из
+Беларускай граматычнай базы (https://github.com/Belarus/GrammarDB, CC BY-SA 4.0, файл релиза
+spellchecker/slovy-2008-stress.txt); --stress подменяет stress.txt своим файлом (и у русских паков).
+Запуск: ../venv-et/bin/python tools/export_pack.py cis_ru | ru | cis_be [--grammardb путь] [--stress путь]
 (модель и акцентор для id скачать заранее в tools/, см. source в PACKS и LANGS)"""
 import argparse, json, os, tempfile, zipfile
 from typing import List, Tuple
@@ -75,26 +77,86 @@ def export_accentor(pt, out_path):
     return a.exceptions, lite
 
 
-def exceptions_stress(exceptions, lite, path):
-    """stress.txt из exceptions акцентора: словарные ударения silero-stress (слово → (позиция «+», позиция «ё»;
-    у bel «ё» всегда -1)). Python-акцентор ставит их сам, приложению достаётся только модель — берём слова, где
-    lite-модель ошибается, выбирая гласную как BelStress.kt: первый максимум среди гласных, но не дальше выходов
-    модели. Апостроф BelNormalizer убирает до ударений — убираем и здесь, иначе слово не найдётся."""
-    v = 'аеёіоуыэюя'   # BelStress.vowels
-    words = {w.replace('’', ''): s - w[:s].count('’') for w, (s, _) in exceptions.items()}
-    assert len(words) == len(exceptions), 'слова совпали без апострофа'
-    order = sorted(words)
+# как в BelStress.kt: гласные, служебные слова без «+», апостроф BelNormalizer убирает до ударений
+VOWELS = 'аеёіоуыэюя'
+NO_MARK = {'ў', 'у', 'з', 'с', 'на', 'да', 'па', 'за', 'ад', 'аб', 'для', 'пры', 'між', 'пад', 'над', 'без', 'праз',
+           'пра', 'а', 'і', 'не', 'ні', 'бы', 'жа', 'ці', 'то', 'як', 'што', 'хто', 'дзе', 'калі', 'так', 'ну', 'вось',
+           'чым', 'каб', 'але', 'або', 'усе', 'усё'}
+APOS = "’'`´ʼ‘"
+
+
+def markable(part):
+    """Часть слова, которой BelStress ставит «+»: не служебное слово и не меньше двух гласных."""
+    return part not in NO_MARK and sum(c in VOWELS for c in part) >= 2
+
+
+def normalize(v):
+    """Ударения так, как их поставит BelStress: «+» только в размечаемых частях, в каждой ровно один; иначе None."""
+    parts = []
+    for p in v.split('-'):
+        bare = p.replace('+', '')
+        if not markable(bare): parts.append(bare); continue
+        if p.count('+') != 1 or p.endswith('+') or p[p.index('+') + 1] not in VOWELS: return None
+        parts.append(p)
+    return '-'.join(parts) if '+' in ''.join(parts) else None
+
+
+def grammardb_stress(path):
+    """GrammarDB slovy-2008-stress.txt: форма с акутом после ударной гласной → «+» перед ней. Только слова с одним
+    вариантом ударения: омографы («за+мак»/«зам+ок») одним ударением не фиксируем."""
+    variants = {}
+    letters = set('абвгдеёжзійклмнопрстуўфхцчшыьэюя-')
+    with open(path, encoding='utf-8') as f:
+        for line in f:
+            s = line.strip().lower()
+            for a in APOS: s = s.replace(a, '')
+            out = []
+            for ch in s:
+                if ch in '́̀':
+                    if out: out.insert(len(out) - 1, '+')
+                else:
+                    out.append(ch)
+            v = ''.join(out); w = v.replace('+', '')
+            if not w or not set(w) <= letters or w[0] == '-' or w[-1] == '-': continue
+            variants.setdefault(w, set()).add(normalize(v))
+    return {w: next(iter(vs)) for w, vs in variants.items() if len(vs) == 1 and None not in vs}
+
+
+def lang_stress(exceptions, lite, path, grammardb=None):
+    """stress.txt: словарные ударения, которые lite-акцентор в приложении ставит иначе. Источники: exceptions
+    акцентора silero-stress (слово → (позиция «+», позиция «ё»; у bel «ё» всегда -1); python-акцентор ставит их
+    сам, приложению достаётся только модель) и, если задана, GrammarDB; при расхождении побеждают exceptions.
+    Разметку акцентором повторяем как BelStress.kt: слово режется по дефису, в каждой размечаемой части —
+    первый максимум среди гласных, но не дальше выходов модели."""
+    cand = grammardb_stress(grammardb) if grammardb else {}
+    n_gdb = len(cand)
+    exc = {}
+    for w, (s, _) in exceptions.items():
+        bare = w
+        for a in APOS: bare = bare.replace(a, '')
+        k = s - sum(c in APOS for c in w[:s])
+        v = normalize(bare[:k] + '+' + bare[k:])
+        if v: exc[bare] = v
+    conflicts = sum(1 for w, v in exc.items() if w in cand and cand[w] != v)
+    cand.update(exc)
+    parts = sorted({p for w in cand for p in w.split('-') if markable(p)})
+    pred = {}
     with torch.no_grad():
-        logits = lite(order)[0].tolist()
-    out = []
-    for w, row in zip(order, logits):
-        at = [i for i, c in enumerate(w) if c in v]
-        k = max(range(min(len(at), len(row))), key=row.__getitem__)
-        if at[k] != words[w]: out.append(f'{w} {w[:words[w]]}+{w[words[w]:]}\n')
+        for i in range(0, len(parts), 4096):
+            chunk = parts[i:i + 4096]
+            for p, row in zip(chunk, lite(chunk)[0].tolist()):
+                at = [j for j, c in enumerate(p) if c in VOWELS]
+                k = max(range(min(len(at), len(row))), key=row.__getitem__)
+                pred[p] = p[:at[k]] + '+' + p[at[k]:]
+    out = [f'{w} {v}\n' for w, v in sorted(cand.items()) if '-'.join(pred.get(p, p) for p in w.split('-')) != v]
     with open(path, 'w', encoding='utf-8', newline='\n') as f:
-        f.write('# исключения акцентора silero-stress (bel, MIT): слова, где модель ставит ударение иначе\n')
+        f.write('# слова, где акцентор ставит ударение иначе: исключения акцентора silero-stress (bel, MIT)\n')
+        if grammardb:
+            f.write('# и Беларуская граматычная база (GrammarDB, https://github.com/Belarus/GrammarDB, CC BY-SA 4.0);\n')
+            f.write('# файл распространяется на условиях CC BY-SA 4.0\n')
         f.writelines(out)
-    print('stress.txt из exceptions:', len(out), 'из', len(words))
+    print(f'stress.txt: {len(out)} поправок из {len(cand)} слов (exceptions {len(exc)}, GrammarDB {n_gdb}, '
+          f'расхождений exceptions и GrammarDB {conflicts})')
 
 
 def check_stress(path):
@@ -109,9 +171,11 @@ if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('pack_id', nargs='?', default='cis_ru', choices=PACKS)
     ap.add_argument('--stress', help='stress.txt в пак (поправки ударений) вместо собранного из exceptions')
+    ap.add_argument('--grammardb', help='slovy-2008-stress.txt из релиза GrammarDB: поправки и из неё (CC BY-SA 4.0)')
     args = ap.parse_args()
     pack_id = args.pack_id
     pt, keep, types, title, lic, source, golden_speaker = PACKS[pack_id]
+    if args.grammardb and not args.stress: lic += '; stress.txt — CC BY-SA 4.0 (GrammarDB)'
     PT = os.path.join(HERE, pt)
     big = torch.package.PackageImporter(PT).load_pickle('tts_models', 'model')
     pk = big.packages[0]
@@ -150,7 +214,8 @@ if __name__ == '__main__':
         if pack_id in LANGS:
             acc_p = os.path.join(tmp, 'accentor.ptl'); exc, lite = export_accentor(os.path.join(HERE, LANGS[pack_id][1]), acc_p)
             files.append(('accentor.ptl', acc_p))
-            if not args.stress: args.stress = os.path.join(tmp, 'stress.txt'); exceptions_stress(exc, lite, args.stress)
+            if not args.stress: args.stress = os.path.join(tmp, 'stress.txt'); lang_stress(exc, lite, args.stress, args.grammardb)
+            check_stress(args.stress)
         out = os.path.join(DIST, f'ruvoice-pack-{pack_id}.zip')
         with zipfile.ZipFile(out, 'w') as zf:
             zf.writestr('pack.json', json.dumps(pack, ensure_ascii=False), compress_type=zipfile.ZIP_DEFLATED)
