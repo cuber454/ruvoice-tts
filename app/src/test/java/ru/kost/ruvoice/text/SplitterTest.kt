@@ -68,6 +68,9 @@ class SplitterTest {
         assertEquals(listOf("Л. Н. Толстой родился в 1828 г. в Ясной Поляне.", "Он писал."),
             Splitter.sentences("Л. Н. Толстой родился в 1828 г. в Ясной Поляне. Он писал."))
         assertEquals(listOf("Раз.", "Два!"), Splitter.sentences("Раз. Два!"))
+        // белорусский инициал «І.» — тоже не конец предложения
+        assertEquals(listOf("Акадэмік І. Шамякін напісаў раман.", "Далей."),
+            Splitter.sentences("Акадэмік І. Шамякін напісаў раман. Далей."))
     }
 
     @Test fun keepsAbbreviationStopWordsTogether() {

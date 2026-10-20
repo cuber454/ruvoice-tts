@@ -334,11 +334,14 @@ object BelNumbers {
             "${m.groupValues[1]}${BelNormalizer.ordinal(y1, form)} — ${BelNormalizer.ordinal(y2, form)} $word"
         }
         s = GG_LOC.replace(s, "$1гадах")
+        s = GG_GEN.replace(s, "$1гадоў")
         s = GG.replace(s, "гады")
         return s
     }
     /** «у 1990-х гг.» — [ordinals] уже дали «у … дзевяностых»: месны, «гадах»; не проверено носителем. */
     private val GG_LOC = Regex("""(?<!\p{L})([уў]\s+(?:\p{L}+\s+){0,3}\p{L}+ых\s+)гг\.?""", RegexOption.IGNORE_CASE)
+    /** «-х» без «у/ў» ([GG_LOC] уже прошёл) — родны: «пачатак 1990-х гг.» → «… дзевяностых гадоў»; не проверено носителем. */
+    private val GG_GEN = Regex("""(?<!\p{L})(\p{L}+ых\s+)гг\.?""", RegexOption.IGNORE_CASE)
 
     /** Сокращение без числа: «руб.» после «5 тыс.» или «г.» перед названием города. Только отдельным словом:
      * «капуста», «рубель» и уже развёрнутое единицами «два рублі» не трогаем. */
